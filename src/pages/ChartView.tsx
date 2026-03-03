@@ -1,4 +1,5 @@
 import { fetchWithAuth } from '../lib/api';
+import { supabase } from '../lib/supabase';
 import { useEffect, useState } from 'react';
 import { MultiChartLayout } from '../components/chart/MultiChartLayout';
 
@@ -13,9 +14,22 @@ export default function ChartView() {
 
   useEffect(() => {
     // Fetch HTF candles
-    fetchWithAuth(`/api/candles/${pair}/${htfTimeframe}`)
-      .then((res) => res.json())
-      .then((data) => {
+    if (!supabase) return;
+    supabase.from('candles')
+      .select('*')
+      .eq('pair', pair)
+      .eq('timeframe', htfTimeframe)
+      .order('time', { ascending: true })
+      .limit(500)
+      .then(({ data, error }) => {
+        if (error) {
+           console.error(error);
+           return;
+        }
+        if (!data || data.length === 0) {
+           setHtfData([]);
+           return;
+        }
         const formattedData = data.map((d: any, index: number) => {
            let markers = [];
            // Mock BOS/CHoCH markers
@@ -38,10 +52,18 @@ export default function ChartView() {
         setHtfData(formattedData);
 
         // Fetch Real Zones from Backend
-        fetchWithAuth(`/api/zones/${pair}/${htfTimeframe}`)
-          .then(res => res.json())
-          .then(zones => {
-             if (formattedData.length > 0) {
+        supabase.from('zones')
+          .select('*')
+          .eq('pair', pair)
+          .eq('timeframe', htfTimeframe)
+          .order('time', { ascending: false })
+          .limit(100)
+          .then(({ data: zones, error }) => {
+             if (error) {
+                 console.error(error);
+                 return;
+             }
+             if (zones && formattedData.length > 0) {
                 // Since the backend currently only returns top/bottom prices for unmitigated zones,
                 // we will render them as rectangles extending from 50 candles ago to the latest candle.
                 // In the future, the backend should be updated to return creation_time for the start of the box.
@@ -58,13 +80,24 @@ export default function ChartView() {
                 setHtfZones(mappedZones);
              }
           });
-      })
-      .catch((err) => console.error(err));
+      });
 
     // Fetch LTF candles
-    fetchWithAuth(`/api/candles/${pair}/${ltfTimeframe}`)
-      .then((res) => res.json())
-      .then((data) => {
+    supabase.from('candles')
+      .select('*')
+      .eq('pair', pair)
+      .eq('timeframe', ltfTimeframe)
+      .order('time', { ascending: true })
+      .limit(500)
+      .then(({ data, error }) => {
+        if (error) {
+           console.error(error);
+           return;
+        }
+        if (!data || data.length === 0) {
+           setLtfData([]);
+           return;
+        }
         const formattedData = data.map((d: any, index: number) => {
            let markers = [];
 
@@ -97,8 +130,7 @@ export default function ChartView() {
           };
         });
         setLtfData(formattedData);
-      })
-      .catch((err) => console.error(err));
+      });
   }, [pair, htfTimeframe, ltfTimeframe]);
 
   return (

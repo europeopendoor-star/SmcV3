@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { createChart, IChartApi, ISeriesApi, CandlestickData, ColorType, CandlestickSeries, HistogramSeries, CrosshairMode } from 'lightweight-charts';
+import { createChart, IChartApi, ISeriesApi, CandlestickData, ColorType, CandlestickSeries, HistogramSeries, CrosshairMode, createSeriesMarkers } from 'lightweight-charts';
 import { RiskRewardTool } from './RiskRewardTool';
 
 export interface ZoneData {
@@ -27,6 +27,7 @@ export const TradingChart: React.FC<TradingChartProps> = ({ data, zones = [], on
   const tooltipRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const markersRef = useRef<any>(null);
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const [tooltipData, setTooltipData] = useState<{ date: string, open: string, high: string, low: string, close: string, left: number, top: number } | null>(null);
   const [renderedZones, setRenderedZones] = useState<any[]>([]);
@@ -76,6 +77,7 @@ export const TradingChart: React.FC<TradingChartProps> = ({ data, zones = [], on
 
     chartRef.current = chart;
     seriesRef.current = series;
+    markersRef.current = createSeriesMarkers(series, []);
     volumeSeriesRef.current = volumeSeries;
 
     if (onChartInit) {
@@ -123,6 +125,7 @@ export const TradingChart: React.FC<TradingChartProps> = ({ data, zones = [], on
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
+      markersRef.current = null;
       volumeSeriesRef.current = null;
     };
   }, []);
@@ -155,7 +158,7 @@ export const TradingChart: React.FC<TradingChartProps> = ({ data, zones = [], on
              });
          }
       });
-      seriesRef.current.setMarkers(allMarkers);
+      if (markersRef.current) markersRef.current.setMarkers(allMarkers);
     }
   }, [data]);
 
