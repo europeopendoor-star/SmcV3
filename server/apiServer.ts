@@ -41,28 +41,36 @@ router.get('/candles/:pair/:timeframe', (req, res) => {
 });
 
 router.get('/performance', (req, res) => {
-  // Calculate mock performance stats from closed signals
-  // In a real app, we would track actual PnL per signal
   const closedSignals = db.prepare(`SELECT * FROM signals WHERE status = 'closed'`).all() as any[];
   
   const totalTrades = closedSignals.length;
-  // For demo purposes, we simulate a win rate if there aren't enough closed trades
-  const wins = closedSignals.filter(s => Math.random() > 0.3).length; // Simulated 70% win rate for demo
-  const losses = totalTrades - wins;
-  const winRate = totalTrades > 0 ? (wins / totalTrades) * 100 : 0;
   
+  let wins = 0;
+  let losses = 0;
+  let totalPips = 0;
+
+  // Estimate performance from historical signals
+  for (const signal of closedSignals) {
+    // If we don't know if it won or lost, we can check the last candle or just assume based on an educated guess.
+    // Ideally the DB schema would be updated, but for now we calculate what we can.
+    // Without altering the DB and engine extensively, we'll return 0 if there are no trades,
+    // or estimate wins if there's no result tracking column.
+    // Let's keep it 0 if the DB doesn't support PNL tracking yet to avoid fake data.
+  }
+
+  const winRate = totalTrades > 0 ? (wins / totalTrades) * 100 : 0;
   const smcTrades = closedSignals.filter(s => s.entry_model === 'smc').length;
   const sniperTrades = closedSignals.filter(s => s.entry_model === 'sniper').length;
 
   res.json({
-    totalTrades: totalTrades > 0 ? totalTrades : 142, // Mock data if empty
-    winRate: totalTrades > 0 ? winRate.toFixed(1) : 72.5,
-    wins: totalTrades > 0 ? wins : 103,
-    losses: totalTrades > 0 ? losses : 39,
-    avgRR: '1:4.5',
-    totalPips: totalTrades > 0 ? wins * 45 - losses * 10 : 4250,
-    smcTrades: totalTrades > 0 ? smcTrades : 85,
-    sniperTrades: totalTrades > 0 ? sniperTrades : 57
+    totalTrades,
+    winRate: winRate.toFixed(1),
+    wins,
+    losses,
+    avgRR: '0', // Not enough info to calculate average RR accurately yet
+    totalPips,
+    smcTrades,
+    sniperTrades
   });
 });
 
