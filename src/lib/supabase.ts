@@ -9,21 +9,39 @@ export const supabase = (supabaseUrl && supabaseAnonKey)
   ? createClient(supabaseUrl, supabaseAnonKey) 
   : null;
 
-export const signInWithGoogle = async () => {
+export const signUpWithEmail = async (email: string, password: string) => {
   if (!supabase) {
     throw new Error("Supabase is not configured.");
   }
   try {
-    const { data, error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
       options: {
-        redirectTo: `${window.location.origin}/signals`
+        emailRedirectTo: `${window.location.origin}/signals`
       }
     });
     if (error) throw error;
     return { data };
   } catch (error) {
-    console.error("Error signing in with Google", error);
+    console.error("Error signing up with email", error);
+    throw error;
+  }
+};
+
+export const signInWithEmail = async (email: string, password: string) => {
+  if (!supabase) {
+    throw new Error("Supabase is not configured.");
+  }
+  try {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    if (error) throw error;
+    return { data };
+  } catch (error) {
+    console.error("Error signing in with email", error);
     throw error;
   }
 };
