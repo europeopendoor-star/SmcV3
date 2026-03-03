@@ -30,26 +30,24 @@ async function fetchAndStore(pair: string, timeframe: string, yfInterval: '1m' |
     }) as any;
 
     if (result && result.quotes) {
-      const insertStmt = db.prepare(`
-        INSERT OR IGNORE INTO candles (pair, timeframe, time, open, high, low, close, volume)
-        VALUES (@pair, @timeframe, @time, @open, @high, @low, @close, @volume)
-      `);
-
-      db.transaction(() => {
-        for (const q of result.quotes) {
-          if (q.open === null || q.close === null) continue;
-          insertStmt.run({
-            pair,
-            timeframe,
-            time: Math.floor(new Date(q.date).getTime() / 1000),
-            open: q.open,
-            high: q.high,
-            low: q.low,
-            close: q.close,
-            volume: q.volume || 0
-          });
-        }
-      })();
+      const inserts = [];
+      for (const q of result.quotes) {
+        if (q.open === null || q.close === null) continue;
+        inserts.push({
+          pair,
+          timeframe,
+          time: Math.floor(new Date(q.date).getTime() / 1000),
+          open: q.open,
+          high: q.high,
+          low: q.low,
+          close: q.close,
+          volume: q.volume || 0
+        });
+      }
+      if (inserts.length > 0) {
+        // Upserting to emulate INSERT OR IGNORE
+        await db.from('candles').upsert(inserts, { onConflict: 'pair, timeframe, time', ignoreDuplicates: true });
+      }
     }
   } catch (error) {
     console.error(`Failed to fetch ${timeframe} for ${pair}:`, error);
@@ -57,8 +55,13 @@ async function fetchAndStore(pair: string, timeframe: string, yfInterval: '1m' |
 }
 
 async function buildH4FromH1(pair: string) {
-  const h1Candles = db.prepare(`SELECT * FROM candles WHERE pair = ? AND timeframe = 'H1' ORDER BY time ASC`).all(pair) as any[];
-  if (h1Candles.length === 0) return;
+  const { data: h1Candles, error } = await db.from('candles')
+    .select('*')
+    .eq('pair', pair)
+    .eq('timeframe', 'H1')
+    .order('time', { ascending: true });
+
+  if (error || !h1Candles || h1Candles.length === 0) return;
 
   const h4Candles = [];
   let currentH4: any = null;
@@ -77,21 +80,15 @@ async function buildH4FromH1(pair: string) {
   }
   if (currentH4) h4Candles.push(currentH4);
 
-  const insertStmt = db.prepare(`
-    INSERT OR IGNORE INTO candles (pair, timeframe, time, open, high, low, close, volume)
-    VALUES (@pair, @timeframe, @time, @open, @high, @low, @close, @volume)
-  `);
-
-  db.transaction(() => {
-    for (const c of h4Candles) {
-      insertStmt.run(c);
-    }
-  })();
+  if (h4Candles.length > 0) {
+    await db.from('candles').upsert(h4Candles, { onConflict: 'pair, timeframe, time', ignoreDuplicates: true });
+  }
 }
 
 export async function ingestHistoricalData() {
-  const count = db.prepare('SELECT COUNT(*) as c FROM candles').get() as { c: number };
-  if (count.c === 0) {
+  const { count, error } = await db.from('candles').select('*', { count: 'exact', head: true });
+
+  if (count === 0 || error) {
     console.log('Fetching historical data from Yahoo Finance...');
     for (const pair of pairs) {
       await fetchAndStore(pair, 'H1', '1h', 30); // Last 30 days of H1

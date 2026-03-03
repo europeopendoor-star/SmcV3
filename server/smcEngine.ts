@@ -21,48 +21,58 @@ function detectSwings(candles: any[]) {
 }
 
 // Detect BOS and CHoCH
-function detectStructure(swings: any[], pair: string, timeframe: string) {
-  // Simplified structure detection
+async function detectStructure(swings: any[], pair: string, timeframe: string) {
   let currentTrend = 'neutral';
   let lastHigh = null;
   let lastLow = null;
 
-  const insert = db.prepare(`
-    INSERT OR IGNORE INTO structures (pair, timeframe, type, direction, price, time)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `);
+  const inserts = [];
 
   for (const swing of swings) {
     if (swing.type === 'high') {
       if (lastHigh && swing.price > lastHigh.price) {
         if (currentTrend === 'bearish') {
-          insert.run(pair, timeframe, 'CHoCH', 'bullish', swing.price, swing.time);
+          inserts.push({ pair, timeframe, type: 'CHoCH', direction: 'bullish', price: swing.price, time: swing.time });
           currentTrend = 'bullish';
         } else if (currentTrend === 'bullish') {
-          insert.run(pair, timeframe, 'BOS', 'bullish', swing.price, swing.time);
+          inserts.push({ pair, timeframe, type: 'BOS', direction: 'bullish', price: swing.price, time: swing.time });
         }
       }
       lastHigh = swing;
     } else {
       if (lastLow && swing.price < lastLow.price) {
         if (currentTrend === 'bullish') {
-          insert.run(pair, timeframe, 'CHoCH', 'bearish', swing.price, swing.time);
+          inserts.push({ pair, timeframe, type: 'CHoCH', direction: 'bearish', price: swing.price, time: swing.time });
           currentTrend = 'bearish';
         } else if (currentTrend === 'bearish') {
-          insert.run(pair, timeframe, 'BOS', 'bearish', swing.price, swing.time);
+          inserts.push({ pair, timeframe, type: 'BOS', direction: 'bearish', price: swing.price, time: swing.time });
         }
       }
       lastLow = swing;
     }
   }
+
+  if (inserts.length > 0) {
+    // Avoid inserting exact duplicates if possible or run a soft upsert / insert ignore
+    for (const data of inserts) {
+       const { error } = await db.from('structures')
+         .select('id')
+         .eq('pair', data.pair)
+         .eq('timeframe', data.timeframe)
+         .eq('type', data.type)
+         .eq('time', data.time)
+         .single();
+
+       if (error && error.code === 'PGRST116') { // Not found
+           await db.from('structures').insert(data);
+       }
+    }
+  }
 }
 
 // Detect FVG
-function detectFVG(candles: any[], pair: string, timeframe: string) {
-  const insert = db.prepare(`
-    INSERT OR IGNORE INTO zones (pair, timeframe, type, direction, top, bottom, time)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `);
+async function detectFVG(candles: any[], pair: string, timeframe: string) {
+  const inserts = [];
 
   for (let i = 2; i < candles.length; i++) {
     const c1 = candles[i - 2];
@@ -71,22 +81,34 @@ function detectFVG(candles: any[], pair: string, timeframe: string) {
 
     // Bullish FVG
     if (c1.high < c3.low) {
-      insert.run(pair, timeframe, 'FVG', 'bullish', c3.low, c1.high, c2.time);
+      inserts.push({ pair, timeframe, type: 'FVG', direction: 'bullish', top: c3.low, bottom: c1.high, time: c2.time });
     }
     // Bearish FVG
     if (c1.low > c3.high) {
-      insert.run(pair, timeframe, 'FVG', 'bearish', c1.low, c3.high, c2.time);
+      inserts.push({ pair, timeframe, type: 'FVG', direction: 'bearish', top: c1.low, bottom: c3.high, time: c2.time });
+    }
+  }
+
+  if (inserts.length > 0) {
+    for (const data of inserts) {
+       const { error } = await db.from('zones')
+         .select('id')
+         .eq('pair', data.pair)
+         .eq('timeframe', data.timeframe)
+         .eq('type', data.type)
+         .eq('time', data.time)
+         .single();
+
+       if (error && error.code === 'PGRST116') { // Not found
+           await db.from('zones').insert(data);
+       }
     }
   }
 }
 
 // Detect Order Blocks
-function detectOB(candles: any[], pair: string, timeframe: string) {
-  // Simplified OB detection: last opposite candle before displacement
-  const insert = db.prepare(`
-    INSERT OR IGNORE INTO zones (pair, timeframe, type, direction, top, bottom, time)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `);
+async function detectOB(candles: any[], pair: string, timeframe: string) {
+  const inserts = [];
 
   for (let i = 1; i < candles.length - 1; i++) {
     const prev = candles[i - 1];
@@ -95,31 +117,49 @@ function detectOB(candles: any[], pair: string, timeframe: string) {
 
     // Bullish OB: Bearish candle followed by strong bullish displacement
     if (curr.close < curr.open && next.close > next.open && (next.close - next.open) > (curr.open - curr.close) * 1.5) {
-      insert.run(pair, timeframe, 'OB', 'bullish', curr.high, curr.low, curr.time);
+      inserts.push({ pair, timeframe, type: 'OB', direction: 'bullish', top: curr.high, bottom: curr.low, time: curr.time });
     }
     // Bearish OB: Bullish candle followed by strong bearish displacement
     if (curr.close > curr.open && next.close < next.open && (next.open - next.close) > (curr.close - curr.open) * 1.5) {
-      insert.run(pair, timeframe, 'OB', 'bearish', curr.high, curr.low, curr.time);
+      inserts.push({ pair, timeframe, type: 'OB', direction: 'bearish', top: curr.high, bottom: curr.low, time: curr.time });
+    }
+  }
+
+  if (inserts.length > 0) {
+    for (const data of inserts) {
+       const { error } = await db.from('zones')
+         .select('id')
+         .eq('pair', data.pair)
+         .eq('timeframe', data.timeframe)
+         .eq('type', data.type)
+         .eq('time', data.time)
+         .single();
+
+       if (error && error.code === 'PGRST116') { // Not found
+           await db.from('zones').insert(data);
+       }
     }
   }
 }
 
-export function runSMCEngine() {
+export async function runSMCEngine() {
   const pairs = ['XAUUSD', 'EURUSD', 'GBPUSD', 'USDJPY', 'AUDUSD', 'USDCAD'];
   const timeframes = ['H1', 'H4'];
 
   for (const pair of pairs) {
     for (const tf of timeframes) {
-      const candles = db.prepare(`
-        SELECT * FROM candles WHERE pair = ? AND timeframe = ? ORDER BY time ASC
-      `).all(pair, tf);
+      const { data: candles, error } = await db.from('candles')
+        .select('*')
+        .eq('pair', pair)
+        .eq('timeframe', tf)
+        .order('time', { ascending: true });
 
-      if (candles.length < 5) continue;
+      if (error || !candles || candles.length < 5) continue;
 
       const swings = detectSwings(candles);
-      detectStructure(swings, pair, tf);
-      detectFVG(candles, pair, tf);
-      detectOB(candles, pair, tf);
+      await detectStructure(swings, pair, tf);
+      await detectFVG(candles, pair, tf);
+      await detectOB(candles, pair, tf);
     }
   }
 }

@@ -1,9 +1,9 @@
-import sqlite3
 import pandas as pd
 import sys
 import os
 import json
 import traceback
+from sqlalchemy import create_engine
 
 # Try to import backtesting, or give a friendly error if it's not installed
 try:
@@ -13,26 +13,35 @@ except ImportError:
     print("Error: backtesting.py is not installed. Run: pip install backtesting")
     sys.exit(1)
 
-def get_data(db_path, pair, timeframe):
-    """Fetch historical candle data from SQLite and convert to pandas DataFrame."""
+def get_engine(db_url):
+    """Create SQLAlchemy engine for Postgres."""
+    # SQLAlchemy requires postgresql:// instead of postgres://
+    if db_url.startswith("postgres://"):
+        db_url = db_url.replace("postgres://", "postgresql://", 1)
+    return create_engine(db_url)
+
+def get_data(db_url, pair, timeframe):
+    """Fetch historical candle data from Postgres and convert to pandas DataFrame."""
     try:
-        conn = sqlite3.connect(db_path)
+        engine = get_engine(db_url)
         query = """
             SELECT time as Date, open as Open, high as High, low as Low, close as Close, volume as Volume
             FROM candles
-            WHERE pair = ? AND timeframe = ?
+            WHERE pair = %(pair)s AND timeframe = %(timeframe)s
             ORDER BY time ASC
         """
 
         # Read into pandas
-        df = pd.read_sql_query(query, conn, params=(pair, timeframe))
-        conn.close()
+        df = pd.read_sql_query(query, engine, params={"pair": pair, "timeframe": timeframe})
 
         if df.empty:
             return df
 
-        # Convert JS timestamp (milliseconds) to datetime
-        df['Date'] = pd.to_datetime(df['Date'], unit='ms')
+        # Convert JS timestamp (seconds) to datetime
+        # (Note: In the original sqlite schema it seemed to be milliseconds, but in your new schema it might be seconds.
+        # Let's handle both dynamically or assume seconds as stored in `Math.floor(Date.now()/1000)` )
+        # Actually in dataIngestion.ts: `time: Math.floor(new Date(q.date).getTime() / 1000)` -> SECONDS
+        df['Date'] = pd.to_datetime(df['Date'], unit='s')
         df.set_index('Date', inplace=True)
         return df
     except Exception as e:
@@ -40,21 +49,21 @@ def get_data(db_path, pair, timeframe):
         traceback.print_exc()
         sys.exit(1)
 
-def get_signals(db_path, pair, entry_model):
+def get_signals(db_url, pair, entry_model):
     """Fetch generated signals to simulate execution."""
     try:
-        conn = sqlite3.connect(db_path)
+        engine = get_engine(db_url)
         query = """
             SELECT created_at, direction, entry_zone_low, entry_zone_high, stop_loss, take_profit_1
             FROM signals
-            WHERE pair = ? AND entry_model = ?
+            WHERE pair = %(pair)s AND entry_model = %(entry_model)s
             ORDER BY created_at ASC
         """
-        signals = pd.read_sql_query(query, conn, params=(pair, entry_model))
-        conn.close()
+        signals = pd.read_sql_query(query, engine, params={"pair": pair, "entry_model": entry_model})
 
         if not signals.empty:
-            signals['created_at'] = pd.to_datetime(signals['created_at'], unit='ms')
+            # created_at is in seconds
+            signals['created_at'] = pd.to_datetime(signals['created_at'], unit='s')
         return signals
     except Exception as e:
         print(f"Error fetching signals: {e}")
@@ -90,11 +99,11 @@ class DB_Signal_Executor(Strategy):
     Executes based on pre-calculated signals from the Node.js backend.
     """
     pair = "XAUUSD"
-    db_path = ""
+    db_url = ""
     entry_model = "sniper"
 
     def init(self):
-        self.signals = get_signals(self.db_path, self.pair, self.entry_model)
+        self.signals = get_signals(self.db_url, self.pair, self.entry_model)
         self.signal_idx = 0
         self.num_signals = len(self.signals)
 
@@ -120,24 +129,24 @@ class DB_Signal_Executor(Strategy):
             self.signal_idx += 1
 
 
-def run_backtest(db_path, pair, timeframe, entry_model, output_file):
-    print(f"Fetching data for {pair} {timeframe} from {db_path}...")
-    df = get_data(db_path, pair, timeframe)
+def run_backtest(db_url, pair, timeframe, entry_model, output_file):
+    print(f"Fetching data for {pair} {timeframe} from Postgres...")
+    df = get_data(db_url, pair, timeframe)
 
     if df.empty:
-        print(f"Error: No data found for pair={pair} timeframe={timeframe} in {db_path}.")
+        print(f"Error: No data found for pair={pair} timeframe={timeframe} in DB.")
         print("Please ensure the Node.js backend has ingested data first.")
         sys.exit(1)
 
     print(f"Loaded {len(df)} candles.")
 
     # Check if we actually have signals in the DB for this pair/model
-    signals = get_signals(db_path, pair, entry_model)
+    signals = get_signals(db_url, pair, entry_model)
 
     # Decide which strategy to use
     if not signals.empty:
         print(f"Found {len(signals)} signals. Using DB_Signal_Executor strategy.")
-        DB_Signal_Executor.db_path = db_path
+        DB_Signal_Executor.db_url = db_url
         DB_Signal_Executor.pair = pair
         DB_Signal_Executor.entry_model = entry_model
         strategy_class = DB_Signal_Executor
@@ -183,13 +192,13 @@ def run_backtest(db_path, pair, timeframe, entry_model, output_file):
 
 if __name__ == "__main__":
     if len(sys.argv) < 6:
-        print("Usage: python backtester.py <db_path> <pair> <timeframe> <entry_model> <output_file>")
+        print("Usage: python backtester.py <db_url> <pair> <timeframe> <entry_model> <output_file>")
         sys.exit(1)
 
-    db_path = sys.argv[1]
+    db_url = sys.argv[1]
     pair = sys.argv[2]
     timeframe = sys.argv[3]
     entry_model = sys.argv[4]
     output_file = sys.argv[5]
 
-    run_backtest(db_path, pair, timeframe, entry_model, output_file)
+    run_backtest(db_url, pair, timeframe, entry_model, output_file)
