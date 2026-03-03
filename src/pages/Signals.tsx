@@ -1,3 +1,4 @@
+import { fetchWithAuth } from '../lib/api';
 import { useEffect, useState } from 'react';
 import { Filter, Search } from 'lucide-react';
 
@@ -7,7 +8,7 @@ export default function Signals() {
   const [pairFilter, setPairFilter] = useState('ALL');
 
   useEffect(() => {
-    fetch('/api/signals/active')
+    fetchWithAuth('/api/signals/active')
       .then((res) => res.json())
       .then((data) => setSignals(data))
       .catch((err) => console.error(err));

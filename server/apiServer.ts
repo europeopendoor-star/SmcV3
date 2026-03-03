@@ -9,6 +9,7 @@ import { spawn } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
+import { requireAuth } from './auth.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -16,38 +17,38 @@ const __dirname = path.dirname(__filename);
 const router = express.Router();
 
 // Public API
-router.get('/signals/active', (req, res) => {
+router.get('/signals/active', requireAuth, (req, res) => {
   const signals = db.prepare(`SELECT * FROM signals WHERE status IN ('active', 'waiting') ORDER BY created_at DESC`).all();
   res.json(signals);
 });
 
-router.get('/signals/closed', (req, res) => {
+router.get('/signals/closed', requireAuth, (req, res) => {
   const signals = db.prepare(`SELECT * FROM signals WHERE status = 'closed' ORDER BY created_at DESC LIMIT 50`).all();
   res.json(signals);
 });
 
-router.get('/signals/:id', (req, res) => {
+router.get('/signals/:id', requireAuth, (req, res) => {
   const signal = db.prepare(`SELECT * FROM signals WHERE id = ?`).get(req.params.id);
   if (signal) res.json(signal);
   else res.status(404).json({ error: 'Signal not found' });
 });
 
-router.get('/structures/:pair/:timeframe', (req, res) => {
+router.get('/structures/:pair/:timeframe', requireAuth, (req, res) => {
   const structures = db.prepare(`SELECT * FROM structures WHERE pair = ? AND timeframe = ? ORDER BY time DESC LIMIT 100`).all(req.params.pair, req.params.timeframe);
   res.json(structures);
 });
 
-router.get('/zones/:pair/:timeframe', (req, res) => {
+router.get('/zones/:pair/:timeframe', requireAuth, (req, res) => {
   const zones = db.prepare(`SELECT * FROM zones WHERE pair = ? AND timeframe = ? ORDER BY time DESC LIMIT 100`).all(req.params.pair, req.params.timeframe);
   res.json(zones);
 });
 
-router.get('/candles/:pair/:timeframe', (req, res) => {
+router.get('/candles/:pair/:timeframe', requireAuth, (req, res) => {
   const candles = db.prepare(`SELECT * FROM candles WHERE pair = ? AND timeframe = ? ORDER BY time ASC LIMIT 500`).all(req.params.pair, req.params.timeframe);
   res.json(candles);
 });
 
-router.get('/performance', (req, res) => {
+router.get('/performance', requireAuth, (req, res) => {
   // Calculate mock performance stats from closed signals
   // In a real app, we would track actual PnL per signal
   const closedSignals = db.prepare(`SELECT * FROM signals WHERE status = 'closed'`).all() as any[];
@@ -74,27 +75,27 @@ router.get('/performance', (req, res) => {
 });
 
 // Internal API (for testing/triggering manually)
-router.post('/ingest', async (req, res) => {
+router.post('/ingest', requireAuth, async (req, res) => {
   await ingestHistoricalData();
   res.json({ message: 'Ingestion completed' });
 });
 
-router.post('/run-smc', (req, res) => {
+router.post('/run-smc', requireAuth, (req, res) => {
   runSMCEngine();
   res.json({ message: 'SMC Engine completed' });
 });
 
-router.post('/run-sniper', (req, res) => {
+router.post('/run-sniper', requireAuth, (req, res) => {
   runSniperEngine();
   res.json({ message: 'Sniper Engine completed' });
 });
 
-router.post('/run-signals', (req, res) => {
+router.post('/run-signals', requireAuth, (req, res) => {
   runSignalEngine();
   res.json({ message: 'Signal Engine completed' });
 });
 
-router.post('/dispatch-alerts', (req, res) => {
+router.post('/dispatch-alerts', requireAuth, (req, res) => {
   dispatchAlerts();
   res.json({ message: 'Alerts dispatched' });
 });
@@ -106,7 +107,7 @@ if (!fs.existsSync(reportsDir)) {
   fs.mkdirSync(reportsDir, { recursive: true });
 }
 
-router.post('/backtest', (req, res) => {
+router.post('/backtest', requireAuth, (req, res) => {
   const { pair = 'XAUUSD', timeframe = 'H1', entry_model = 'sniper' } = req.body || {};
 
   // Note: __dirname here is /server (or /dist/server)

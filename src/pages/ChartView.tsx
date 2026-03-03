@@ -1,3 +1,4 @@
+import { fetchWithAuth } from '../lib/api';
 import { useEffect, useRef, useState } from 'react';
 import { createChart, ColorType, CandlestickSeries, ISeriesApi } from 'lightweight-charts';
 
@@ -35,7 +36,7 @@ export default function ChartView() {
     });
 
     // Fetch candles
-    fetch(`/api/candles/${pair}/${timeframe}`)
+    fetchWithAuth(`/api/candles/${pair}/${timeframe}`)
       .then((res) => res.json())
       .then((data) => {
         const formattedData = data.map((d: any) => ({
@@ -48,7 +49,7 @@ export default function ChartView() {
         candlestickSeries.setData(formattedData);
 
         // Fetch and draw zones after candles are loaded
-        fetch(`/api/zones/${pair}/${timeframe}`)
+        fetchWithAuth(`/api/zones/${pair}/${timeframe}`)
           .then(res => res.json())
           .then(zones => {
             zones.forEach((zone: any) => {

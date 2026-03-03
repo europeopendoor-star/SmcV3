@@ -1,3 +1,4 @@
+import { fetchWithAuth } from '../lib/api';
 import { useEffect, useState } from 'react';
 import { TrendingUp, Award, Target, Activity, Play } from 'lucide-react';
 
@@ -7,7 +8,7 @@ export default function Performance() {
   const [backtestResult, setBacktestResult] = useState<any>(null);
 
   useEffect(() => {
-    fetch('/api/performance')
+    fetchWithAuth('/api/performance')
       .then((res) => res.json())
       .then((data) => setStats(data))
       .catch((err) => console.error(err));
@@ -17,7 +18,7 @@ export default function Performance() {
     setIsBacktesting(true);
     setBacktestResult(null);
     try {
-      const response = await fetch('/api/backtest', {
+      const response = await fetchWithAuth('/api/backtest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pair: 'XAUUSD', timeframe: '1h', entry_model: 'sniper' })

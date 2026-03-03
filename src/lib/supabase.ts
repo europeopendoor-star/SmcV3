@@ -11,8 +11,7 @@ export const supabase = (supabaseUrl && supabaseAnonKey)
 
 export const signInWithGoogle = async () => {
   if (!supabase) {
-    console.warn("Supabase is not configured. Simulating login for demo purposes.");
-    return { data: { user: { user_metadata: { full_name: 'Demo User' }, email: 'demo@example.com' } } };
+    throw new Error("Supabase is not configured.");
   }
   try {
     const { data, error } = await supabase.auth.signInWithOAuth({
