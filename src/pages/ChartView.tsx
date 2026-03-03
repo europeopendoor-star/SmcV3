@@ -1,101 +1,112 @@
 import { fetchWithAuth } from '../lib/api';
-import { useEffect, useRef, useState } from 'react';
-import { createChart, ColorType, CandlestickSeries, ISeriesApi } from 'lightweight-charts';
+import { useEffect, useState } from 'react';
+import { MultiChartLayout } from '../components/chart/MultiChartLayout';
 
 export default function ChartView() {
-  const chartContainerRef = useRef<HTMLDivElement>(null);
   const [pair, setPair] = useState('XAUUSD');
-  const [timeframe, setTimeframe] = useState('H1');
+  const [htfTimeframe, setHtfTimeframe] = useState('H1');
+  const [ltfTimeframe, setLtfTimeframe] = useState('M5');
+
+  const [htfData, setHtfData] = useState<any[]>([]);
+  const [ltfData, setLtfData] = useState<any[]>([]);
+  const [htfZones, setHtfZones] = useState<any[]>([]);
 
   useEffect(() => {
-    if (!chartContainerRef.current) return;
-
-    const chart = createChart(chartContainerRef.current, {
-      layout: {
-        background: { type: ColorType.Solid, color: '#0a0a0a' },
-        textColor: '#d1d5db',
-      },
-      grid: {
-        vertLines: { color: '#1f2937' },
-        horzLines: { color: '#1f2937' },
-      },
-      width: chartContainerRef.current.clientWidth,
-      height: 600,
-      timeScale: {
-        timeVisible: true,
-        secondsVisible: false,
-      },
-    });
-
-    const candlestickSeries = chart.addSeries(CandlestickSeries, {
-      upColor: '#22c55e',
-      downColor: '#ef4444',
-      borderVisible: false,
-      wickUpColor: '#22c55e',
-      wickDownColor: '#ef4444',
-    });
-
-    // Fetch candles
-    fetchWithAuth(`/api/candles/${pair}/${timeframe}`)
+    // Fetch HTF candles
+    fetchWithAuth(`/api/candles/${pair}/${htfTimeframe}`)
       .then((res) => res.json())
       .then((data) => {
-        const formattedData = data.map((d: any) => ({
-          time: d.time,
-          open: d.open,
-          high: d.high,
-          low: d.low,
-          close: d.close,
-        }));
-        candlestickSeries.setData(formattedData);
+        const formattedData = data.map((d: any, index: number) => {
+           let markers = [];
+           // Mock BOS/CHoCH markers
+           if (index % 50 === 0 && index > 0) {
+              markers.push({ time: d.time, position: 'aboveBar', color: '#eab308', shape: 'arrowDown', text: 'BOS' });
+           } else if (index % 80 === 0 && index > 0) {
+              markers.push({ time: d.time, position: 'belowBar', color: '#ec4899', shape: 'arrowUp', text: 'CHoCH' });
+           }
 
-        // Fetch and draw zones after candles are loaded
-        fetchWithAuth(`/api/zones/${pair}/${timeframe}`)
+           return {
+            time: d.time,
+            open: d.open,
+            high: d.high,
+            low: d.low,
+            close: d.close,
+            volume: d.volume || Math.random() * 1000,
+            markers
+          };
+        });
+        setHtfData(formattedData);
+
+        // Fetch Real Zones from Backend
+        fetchWithAuth(`/api/zones/${pair}/${htfTimeframe}`)
           .then(res => res.json())
           .then(zones => {
-            zones.forEach((zone: any) => {
-              const color = zone.type === 'OB' ? 'rgba(59, 130, 246, 0.5)' : 'rgba(168, 85, 247, 0.5)';
-              candlestickSeries.createPriceLine({
-                price: zone.top,
-                color: color,
-                lineWidth: 1,
-                lineStyle: 2,
-                axisLabelVisible: true,
-                title: `${zone.type} Top`,
-              });
-              candlestickSeries.createPriceLine({
-                price: zone.bottom,
-                color: color,
-                lineWidth: 1,
-                lineStyle: 2,
-                axisLabelVisible: true,
-                title: `${zone.type} Bot`,
-              });
-            });
+             if (formattedData.length > 0) {
+                // Since the backend currently only returns top/bottom prices for unmitigated zones,
+                // we will render them as rectangles extending from 50 candles ago to the latest candle.
+                // In the future, the backend should be updated to return creation_time for the start of the box.
+                const time1 = formattedData[Math.max(0, formattedData.length - 50)].time;
+                const time2 = formattedData[formattedData.length - 1].time;
+
+                const mappedZones = zones.map((zone: any) => ({
+                    time1: time1,
+                    time2: time2,
+                    price1: zone.top,
+                    price2: zone.bottom,
+                    color: zone.type === 'OB' ? 'rgba(59, 130, 246, 0.3)' : 'rgba(168, 85, 247, 0.3)'
+                }));
+                setHtfZones(mappedZones);
+             }
           });
       })
       .catch((err) => console.error(err));
 
-    // Handle resize
-    const handleResize = () => {
-      if (chartContainerRef.current) {
-        chart.applyOptions({ width: chartContainerRef.current.clientWidth });
-      }
-    };
+    // Fetch LTF candles
+    fetchWithAuth(`/api/candles/${pair}/${ltfTimeframe}`)
+      .then((res) => res.json())
+      .then((data) => {
+        const formattedData = data.map((d: any, index: number) => {
+           let markers = [];
 
-    window.addEventListener('resize', handleResize);
+           if (index % 60 === 0 && index > 0) {
+              markers.push({ time: d.time, position: 'belowBar', color: '#3b82f6', shape: 'circle', text: 'Liquidity Sweep' });
+           }
 
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      chart.remove();
-    };
-  }, [pair, timeframe]);
+           // Mock Trade Execution Sequence
+           if (index === data.length - 30) {
+               markers.push({ time: d.time, position: 'belowBar', color: '#22c55e', shape: 'arrowUp', text: 'ENTRY' });
+           }
+           if (index === data.length - 25) {
+               markers.push({ time: d.time, position: 'belowBar', color: '#ef4444', shape: 'circle', text: 'SL Hit' });
+           }
+           if (index === data.length - 15) {
+               markers.push({ time: d.time, position: 'aboveBar', color: '#22c55e', shape: 'arrowDown', text: 'ENTRY (Short)' });
+           }
+           if (index === data.length - 5) {
+               markers.push({ time: d.time, position: 'belowBar', color: '#22c55e', shape: 'square', text: 'TP Hit (WIN)' });
+           }
+
+           return {
+            time: d.time,
+            open: d.open,
+            high: d.high,
+            low: d.low,
+            close: d.close,
+            volume: d.volume || Math.random() * 500,
+            markers
+          };
+        });
+        setLtfData(formattedData);
+      })
+      .catch((err) => console.error(err));
+  }, [pair, htfTimeframe, ltfTimeframe]);
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap justify-between items-center gap-4">
         <div>
           <h1 className="text-3xl font-bold text-white tracking-tight">Interactive Chart</h1>
-          <p className="text-gray-400 mt-1">View SMC structures and Sniper zones.</p>
+          <p className="text-gray-400 mt-1">Split-view HTF & LTF sync.</p>
         </div>
         <div className="flex gap-4">
           <select
@@ -110,41 +121,38 @@ export default function ChartView() {
             <option value="AUDUSD">AUDUSD</option>
             <option value="USDCAD">USDCAD</option>
           </select>
-          <select
-            value={timeframe}
-            onChange={(e) => setTimeframe(e.target.value)}
-            className="bg-black border border-white/10 text-white rounded-lg px-4 py-2 focus:ring-2 focus:ring-yellow-500 outline-none"
-          >
-            <option value="M1">M1 (Sniper)</option>
-            <option value="M5">M5 (Sniper)</option>
-            <option value="H1">H1 (SMC)</option>
-            <option value="H4">H4 (SMC)</option>
-          </select>
+          <div className="flex items-center gap-2">
+             <span className="text-sm text-gray-400">HTF:</span>
+             <select
+                value={htfTimeframe}
+                onChange={(e) => setHtfTimeframe(e.target.value)}
+                className="bg-black border border-white/10 text-white rounded-lg px-2 py-1 focus:ring-2 focus:ring-yellow-500 outline-none text-sm"
+              >
+                <option value="H1">H1</option>
+                <option value="H4">H4</option>
+              </select>
+          </div>
+          <div className="flex items-center gap-2">
+             <span className="text-sm text-gray-400">LTF:</span>
+             <select
+                value={ltfTimeframe}
+                onChange={(e) => setLtfTimeframe(e.target.value)}
+                className="bg-black border border-white/10 text-white rounded-lg px-2 py-1 focus:ring-2 focus:ring-yellow-500 outline-none text-sm"
+              >
+                <option value="M1">M1</option>
+                <option value="M5">M5</option>
+              </select>
+          </div>
         </div>
       </div>
 
-      <div className="bg-black border border-white/10 rounded-2xl overflow-hidden p-1">
-        <div ref={chartContainerRef} className="w-full h-[600px]" />
-      </div>
-
-      <div className="grid md:grid-cols-4 gap-4 text-sm">
-        <div className="bg-white/5 p-4 rounded-xl border border-white/10 flex items-center gap-3">
-          <div className="w-4 h-4 rounded bg-blue-500/20 border border-blue-500"></div>
-          <span className="text-gray-300">Order Block (OB)</span>
-        </div>
-        <div className="bg-white/5 p-4 rounded-xl border border-white/10 flex items-center gap-3">
-          <div className="w-4 h-4 rounded bg-purple-500/20 border border-purple-500"></div>
-          <span className="text-gray-300">Fair Value Gap (FVG)</span>
-        </div>
-        <div className="bg-white/5 p-4 rounded-xl border border-white/10 flex items-center gap-3">
-          <div className="w-4 h-0.5 bg-yellow-500"></div>
-          <span className="text-gray-300">Liquidity Sweep</span>
-        </div>
-        <div className="bg-white/5 p-4 rounded-xl border border-white/10 flex items-center gap-3">
-          <div className="w-4 h-0.5 border-t-2 border-dashed border-white/50"></div>
-          <span className="text-gray-300">BOS / CHoCH</span>
-        </div>
-      </div>
+      <MultiChartLayout
+        htfData={htfData}
+        ltfData={ltfData}
+        htfZones={htfZones}
+        htfTitle={`SMC Context (${htfTimeframe})`}
+        ltfTitle={`Sniper Entry (${ltfTimeframe})`}
+      />
     </div>
   );
 }
