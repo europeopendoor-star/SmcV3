@@ -1,3 +1,4 @@
+import { fetchWithAuth } from '../lib/api';
 import { Link } from 'react-router-dom';
 import { ArrowRight, Target, Shield, Zap } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -6,7 +7,7 @@ export default function Home() {
   const [signals, setSignals] = useState([]);
 
   useEffect(() => {
-    fetch('/api/signals/active')
+    fetchWithAuth('/api/signals/active')
       .then((res) => res.json())
       .then((data) => setSignals(data.slice(0, 3)))
       .catch((err) => console.error(err));

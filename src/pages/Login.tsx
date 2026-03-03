@@ -12,16 +12,6 @@ export default function Login({ onLogin }: { onLogin: (user: any) => void }) {
     setLoading(true);
     setError('');
     try {
-      if (!supabase) {
-        // Demo mode
-        const result = await signInWithGoogle();
-        if ('user' in result.data && result.data.user) {
-          onLogin(result.data.user);
-          navigate('/signals');
-        }
-        setLoading(false);
-        return;
-      }
       
       // Real Supabase OAuth redirects, so we don't navigate manually here
       await signInWithGoogle();

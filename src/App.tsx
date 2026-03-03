@@ -22,7 +22,8 @@ export default function App() {
 
   useEffect(() => {
     if (!supabase) {
-      // If Supabase is not configured, simulate logged out state for demo
+      console.error("Supabase is not configured!");
+
       setLoading(false);
       return;
     }
