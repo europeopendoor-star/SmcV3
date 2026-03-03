@@ -14,25 +14,31 @@ import Education from './pages/Education';
 import Alerts from './pages/Alerts';
 import Performance from './pages/Performance';
 import Login from './pages/Login';
-import { auth } from './lib/firebase';
-import { onAuthStateChanged } from 'firebase/auth';
+import { supabase } from './lib/supabase';
 
 export default function App() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!auth) {
-      // If Firebase is not configured, simulate logged out state for demo
+    if (!supabase) {
+      // If Supabase is not configured, simulate logged out state for demo
       setLoading(false);
       return;
     }
     
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
       setLoading(false);
     });
-    return () => unsubscribe();
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   if (loading) {

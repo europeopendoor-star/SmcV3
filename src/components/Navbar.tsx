@@ -1,7 +1,7 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Activity, LineChart, BookOpen, Bell, Menu, X, TrendingUp, LogOut, LogIn } from 'lucide-react';
 import { useState } from 'react';
-import { logout } from '../lib/firebase';
+import { logout } from '../lib/supabase';
 
 export default function Navbar({ user, setUser }: { user: any, setUser: (user: any) => void }) {
   const location = useLocation();

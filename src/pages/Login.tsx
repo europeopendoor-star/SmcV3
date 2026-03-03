@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Shield, Activity } from 'lucide-react';
-import { signInWithGoogle } from '../lib/firebase';
+import { signInWithGoogle, supabase } from '../lib/supabase';
 
 export default function Login({ onLogin }: { onLogin: (user: any) => void }) {
   const [loading, setLoading] = useState(false);
@@ -12,14 +12,21 @@ export default function Login({ onLogin }: { onLogin: (user: any) => void }) {
     setLoading(true);
     setError('');
     try {
-      const result = await signInWithGoogle();
-      if (result?.user) {
-        onLogin(result.user);
-        navigate('/signals');
+      if (!supabase) {
+        // Demo mode
+        const result = await signInWithGoogle();
+        if ('user' in result.data && result.data.user) {
+          onLogin(result.data.user);
+          navigate('/signals');
+        }
+        setLoading(false);
+        return;
       }
+      
+      // Real Supabase OAuth redirects, so we don't navigate manually here
+      await signInWithGoogle();
     } catch (err: any) {
       setError(err.message || 'Failed to sign in');
-    } finally {
       setLoading(false);
     }
   };
@@ -69,7 +76,7 @@ export default function Login({ onLogin }: { onLogin: (user: any) => void }) {
 
         <div className="pt-6 border-t border-white/10 text-center">
           <p className="text-sm text-gray-500 flex items-center justify-center gap-2">
-            <Shield className="w-4 h-4" /> Secure authentication via Firebase
+            <Shield className="w-4 h-4" /> Secure authentication via Supabase
           </p>
         </div>
       </div>
