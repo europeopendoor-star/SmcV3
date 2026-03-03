@@ -17,50 +17,81 @@ const __dirname = path.dirname(__filename);
 const router = express.Router();
 
 // Public API
-router.get('/signals/active', requireAuth, (req, res) => {
-  const signals = db.prepare(`SELECT * FROM signals WHERE status IN ('active', 'waiting') ORDER BY created_at DESC`).all();
+router.get('/signals/active', requireAuth, async (req, res) => {
+  const { data: signals, error } = await db.from('signals')
+    .select('*')
+    .in('status', ['active', 'waiting'])
+    .order('created_at', { ascending: false });
+  if (error) return res.status(500).json({ error: error.message });
   res.json(signals);
 });
 
-router.get('/signals/closed', requireAuth, (req, res) => {
-  const signals = db.prepare(`SELECT * FROM signals WHERE status = 'closed' ORDER BY created_at DESC LIMIT 50`).all();
+router.get('/signals/closed', requireAuth, async (req, res) => {
+  const { data: signals, error } = await db.from('signals')
+    .select('*')
+    .eq('status', 'closed')
+    .order('created_at', { ascending: false })
+    .limit(50);
+  if (error) return res.status(500).json({ error: error.message });
   res.json(signals);
 });
 
-router.get('/signals/:id', requireAuth, (req, res) => {
-  const signal = db.prepare(`SELECT * FROM signals WHERE id = ?`).get(req.params.id);
+router.get('/signals/:id', requireAuth, async (req, res) => {
+  const { data: signal, error } = await db.from('signals')
+    .select('*')
+    .eq('id', req.params.id)
+    .single();
+  if (error) return res.status(404).json({ error: 'Signal not found' });
   if (signal) res.json(signal);
-  else res.status(404).json({ error: 'Signal not found' });
 });
 
-router.get('/structures/:pair/:timeframe', requireAuth, (req, res) => {
-  const structures = db.prepare(`SELECT * FROM structures WHERE pair = ? AND timeframe = ? ORDER BY time DESC LIMIT 100`).all(req.params.pair, req.params.timeframe);
+router.get('/structures/:pair/:timeframe', requireAuth, async (req, res) => {
+  const { data: structures, error } = await db.from('structures')
+    .select('*')
+    .eq('pair', req.params.pair)
+    .eq('timeframe', req.params.timeframe)
+    .order('time', { ascending: false })
+    .limit(100);
+  if (error) return res.status(500).json({ error: error.message });
   res.json(structures);
 });
 
-router.get('/zones/:pair/:timeframe', requireAuth, (req, res) => {
-  const zones = db.prepare(`SELECT * FROM zones WHERE pair = ? AND timeframe = ? ORDER BY time DESC LIMIT 100`).all(req.params.pair, req.params.timeframe);
+router.get('/zones/:pair/:timeframe', requireAuth, async (req, res) => {
+  const { data: zones, error } = await db.from('zones')
+    .select('*')
+    .eq('pair', req.params.pair)
+    .eq('timeframe', req.params.timeframe)
+    .order('time', { ascending: false })
+    .limit(100);
+  if (error) return res.status(500).json({ error: error.message });
   res.json(zones);
 });
 
-router.get('/candles/:pair/:timeframe', requireAuth, (req, res) => {
-  const candles = db.prepare(`SELECT * FROM candles WHERE pair = ? AND timeframe = ? ORDER BY time ASC LIMIT 500`).all(req.params.pair, req.params.timeframe);
+router.get('/candles/:pair/:timeframe', requireAuth, async (req, res) => {
+  const { data: candles, error } = await db.from('candles')
+    .select('*')
+    .eq('pair', req.params.pair)
+    .eq('timeframe', req.params.timeframe)
+    .order('time', { ascending: true })
+    .limit(500);
+  if (error) return res.status(500).json({ error: error.message });
   res.json(candles);
 });
 
-router.get('/performance', requireAuth, (req, res) => {
-  // Calculate mock performance stats from closed signals
-  // In a real app, we would track actual PnL per signal
-  const closedSignals = db.prepare(`SELECT * FROM signals WHERE status = 'closed'`).all() as any[];
+router.get('/performance', requireAuth, async (req, res) => {
+  const { data: closedSignals, error } = await db.from('signals')
+    .select('*')
+    .eq('status', 'closed');
   
-  const totalTrades = closedSignals.length;
+  const signals = closedSignals || [];
+  const totalTrades = signals.length;
   // For demo purposes, we simulate a win rate if there aren't enough closed trades
-  const wins = closedSignals.filter(s => Math.random() > 0.3).length; // Simulated 70% win rate for demo
+  const wins = signals.filter(s => Math.random() > 0.3).length; // Simulated 70% win rate for demo
   const losses = totalTrades - wins;
   const winRate = totalTrades > 0 ? (wins / totalTrades) * 100 : 0;
   
-  const smcTrades = closedSignals.filter(s => s.entry_model === 'smc').length;
-  const sniperTrades = closedSignals.filter(s => s.entry_model === 'sniper').length;
+  const smcTrades = signals.filter(s => s.entry_model === 'smc').length;
+  const sniperTrades = signals.filter(s => s.entry_model === 'sniper').length;
 
   res.json({
     totalTrades: totalTrades > 0 ? totalTrades : 142, // Mock data if empty
@@ -80,23 +111,23 @@ router.post('/ingest', requireAuth, async (req, res) => {
   res.json({ message: 'Ingestion completed' });
 });
 
-router.post('/run-smc', requireAuth, (req, res) => {
-  runSMCEngine();
+router.post('/run-smc', requireAuth, async (req, res) => {
+  await runSMCEngine();
   res.json({ message: 'SMC Engine completed' });
 });
 
-router.post('/run-sniper', requireAuth, (req, res) => {
-  runSniperEngine();
+router.post('/run-sniper', requireAuth, async (req, res) => {
+  await runSniperEngine();
   res.json({ message: 'Sniper Engine completed' });
 });
 
-router.post('/run-signals', requireAuth, (req, res) => {
-  runSignalEngine();
+router.post('/run-signals', requireAuth, async (req, res) => {
+  await runSignalEngine();
   res.json({ message: 'Signal Engine completed' });
 });
 
-router.post('/dispatch-alerts', requireAuth, (req, res) => {
-  dispatchAlerts();
+router.post('/dispatch-alerts', requireAuth, async (req, res) => {
+  await dispatchAlerts();
   res.json({ message: 'Alerts dispatched' });
 });
 
@@ -110,18 +141,18 @@ if (!fs.existsSync(reportsDir)) {
 router.post('/backtest', requireAuth, (req, res) => {
   const { pair = 'XAUUSD', timeframe = 'H1', entry_model = 'sniper' } = req.body || {};
 
-  // Note: __dirname here is /server (or /dist/server)
-  const dbPath = path.join(__dirname, '..', 'trading.db');
+  // Database is no longer local, passing Supabase Postgres URL
+  const dbUrl = process.env.DATABASE_URL || '';
   const pythonScript = path.join(__dirname, 'python', 'backtester.py');
   const outputFileName = `backtest_${pair}_${timeframe}_${Date.now()}.html`;
   const outputFile = path.join(reportsDir, outputFileName);
 
   console.log(`Starting python backtester for ${pair} ${timeframe}...`);
-  console.log(`Command: python3 ${pythonScript} ${dbPath} ${pair} ${timeframe} ${entry_model} ${outputFile}`);
+  console.log(`Command: python3 ${pythonScript} '${dbUrl}' ${pair} ${timeframe} ${entry_model} ${outputFile}`);
 
   const pythonProcess = spawn('python3', [
     pythonScript,
-    dbPath,
+    dbUrl,
     pair,
     timeframe,
     entry_model,
@@ -177,12 +208,12 @@ export async function startBackgroundJobs() {
   await ingestHistoricalData();
   startLiveIngestion();
 
-  setInterval(() => {
-    runSMCEngine();
-    runSignalEngine();
-    runSniperEngine();
-    updateSignalStatuses();
-    dispatchAlerts();
+  setInterval(async () => {
+    await runSMCEngine();
+    await runSignalEngine();
+    await runSniperEngine();
+    await updateSignalStatuses();
+    await dispatchAlerts();
   }, 60000); // Run every minute
 }
 

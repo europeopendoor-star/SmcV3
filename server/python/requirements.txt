@@ -1,0 +1,4 @@
+backtesting
+pandas
+psycopg2-binary
+SQLAlchemy

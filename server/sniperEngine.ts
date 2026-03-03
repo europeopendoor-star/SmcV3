@@ -1,22 +1,31 @@
 import db from './db.js';
 
-export function runSniperEngine() {
+export async function runSniperEngine() {
   const pairs = ['XAUUSD', 'EURUSD', 'GBPUSD', 'USDJPY', 'AUDUSD', 'USDCAD'];
   const ltfTimeframes = ['M1', 'M5'];
 
   for (const pair of pairs) {
     for (const ltf of ltfTimeframes) {
       // Get recent LTF candles
-      const candles = db.prepare(`
-        SELECT * FROM candles WHERE pair = ? AND timeframe = ? ORDER BY time DESC LIMIT 50
-      `).all(pair, ltf) as any[];
+      const { data: candles, error: candlesErr } = await db.from('candles')
+        .select('*')
+        .eq('pair', pair)
+        .eq('timeframe', ltf)
+        .order('time', { ascending: false })
+        .limit(50);
 
-      if (candles.length < 10) continue;
+      if (candlesErr || !candles || candles.length < 10) continue;
 
       // Get active HTF zones (unmitigated)
-      const htfZones = db.prepare(`
-        SELECT * FROM zones WHERE pair = ? AND timeframe IN ('H1', 'H4') AND mitigated = 0 ORDER BY time DESC LIMIT 5
-      `).all(pair) as any[];
+      const { data: htfZones, error: zonesErr } = await db.from('zones')
+        .select('*')
+        .eq('pair', pair)
+        .in('timeframe', ['H1', 'H4'])
+        .eq('mitigated', 0)
+        .order('time', { ascending: false })
+        .limit(5);
+
+      if (zonesErr || !htfZones) continue;
 
       for (const zone of htfZones) {
         // Check if price is inside HTF zone
@@ -34,10 +43,10 @@ export function runSniperEngine() {
 
           if (zone.direction === 'bullish' && sweepLow) {
             // Generate Sniper Long Signal
-            generateSniperSignal(pair, 'LONG', zone, candles[0], ltf);
+            await generateSniperSignal(pair, 'LONG', zone, candles[0], ltf);
           } else if (zone.direction === 'bearish' && sweepHigh) {
             // Generate Sniper Short Signal
-            generateSniperSignal(pair, 'SHORT', zone, candles[0], ltf);
+            await generateSniperSignal(pair, 'SHORT', zone, candles[0], ltf);
           }
         }
       }
@@ -45,14 +54,18 @@ export function runSniperEngine() {
   }
 }
 
-function generateSniperSignal(pair: string, direction: string, htfZone: any, ltfCandle: any, ltf: string) {
+async function generateSniperSignal(pair: string, direction: string, htfZone: any, ltfCandle: any, ltf: string) {
   const signalId = `sniper-${pair}-${Date.now()}`;
   const now = Math.floor(Date.now() / 1000);
 
   // Check if signal already exists recently
-  const existing = db.prepare(`
-    SELECT id FROM signals WHERE pair = ? AND direction = ? AND created_at > ?
-  `).get(pair, direction, now - 3600);
+  const { data: existing } = await db.from('signals')
+    .select('id')
+    .eq('pair', pair)
+    .eq('direction', direction)
+    .gt('created_at', now - 3600)
+    .limit(1)
+    .single();
 
   if (existing) return;
 
@@ -62,24 +75,35 @@ function generateSniperSignal(pair: string, direction: string, htfZone: any, ltf
   const tp1 = direction === 'LONG' ? entryHigh + 0.005 : entryLow - 0.005;
   const tp2 = direction === 'LONG' ? entryHigh + 0.010 : entryLow - 0.010;
 
-  db.prepare(`
-    INSERT INTO signals (
-      id, pair, direction, created_at, status, entry_model, timeframe,
-      entry_zone_low, entry_zone_high, stop_loss, take_profit_1, take_profit_2, setup_type,
-      htf_timeframe, htf_structure_type, htf_zone_type, htf_zone_price_range,
-      ltf_timeframe, sweep_type, sweep_price, displacement_candle_time, micro_zone_type, micro_structure_break_price
-    ) VALUES (
-      ?, ?, ?, ?, ?, ?, ?,
-      ?, ?, ?, ?, ?, ?,
-      ?, ?, ?, ?,
-      ?, ?, ?, ?, ?, ?
-    )
-  `).run(
-    signalId, pair, direction, now, 'active', 'sniper', ltf,
-    entryLow, entryHigh, sl, tp1, tp2, 'Sniper Entry',
-    htfZone.timeframe, 'BOS', htfZone.type, `${htfZone.bottom}-${htfZone.top}`,
-    ltf, direction === 'LONG' ? 'Sweep Low' : 'Sweep High', ltfCandle.close, ltfCandle.time, 'Micro OB', ltfCandle.close
-  );
+  const { error } = await db.from('signals').insert({
+    id: signalId,
+    pair,
+    direction,
+    created_at: now,
+    status: 'active',
+    entry_model: 'sniper',
+    timeframe: ltf,
+    entry_zone_low: entryLow,
+    entry_zone_high: entryHigh,
+    stop_loss: sl,
+    take_profit_1: tp1,
+    take_profit_2: tp2,
+    setup_type: 'Sniper Entry',
+    htf_timeframe: htfZone.timeframe,
+    htf_structure_type: 'BOS',
+    htf_zone_type: htfZone.type,
+    htf_zone_price_range: `${htfZone.bottom}-${htfZone.top}`,
+    ltf_timeframe: ltf,
+    sweep_type: direction === 'LONG' ? 'Sweep Low' : 'Sweep High',
+    sweep_price: ltfCandle.close,
+    displacement_candle_time: ltfCandle.time,
+    micro_zone_type: 'Micro OB',
+    micro_structure_break_price: ltfCandle.close
+  });
 
-  console.log(`Generated Sniper Signal: ${signalId}`);
+  if (!error) {
+    console.log(`Generated Sniper Signal: ${signalId}`);
+  } else {
+    console.error(`Error generating sniper signal:`, error);
+  }
 }
