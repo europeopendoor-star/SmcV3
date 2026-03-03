@@ -5,6 +5,13 @@ import { runSMCEngine } from './smcEngine.js';
 import { runSniperEngine } from './sniperEngine.js';
 import { runSignalEngine, updateSignalStatuses } from './signalEngine.js';
 import { dispatchAlerts } from './alertEngine.js';
+import { spawn } from 'child_process';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import fs from 'fs';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const router = express.Router();
 
@@ -90,6 +97,78 @@ router.post('/run-signals', (req, res) => {
 router.post('/dispatch-alerts', (req, res) => {
   dispatchAlerts();
   res.json({ message: 'Alerts dispatched' });
+});
+
+// Backtesting API
+// Ensure the static directory exists for backtesting reports
+const reportsDir = path.join(__dirname, '..', 'public', 'reports');
+if (!fs.existsSync(reportsDir)) {
+  fs.mkdirSync(reportsDir, { recursive: true });
+}
+
+router.post('/backtest', (req, res) => {
+  const { pair = 'XAUUSD', timeframe = 'H1', entry_model = 'sniper' } = req.body || {};
+
+  // Note: __dirname here is /server (or /dist/server)
+  const dbPath = path.join(__dirname, '..', 'trading.db');
+  const pythonScript = path.join(__dirname, 'python', 'backtester.py');
+  const outputFileName = `backtest_${pair}_${timeframe}_${Date.now()}.html`;
+  const outputFile = path.join(reportsDir, outputFileName);
+
+  console.log(`Starting python backtester for ${pair} ${timeframe}...`);
+  console.log(`Command: python3 ${pythonScript} ${dbPath} ${pair} ${timeframe} ${entry_model} ${outputFile}`);
+
+  const pythonProcess = spawn('python3', [
+    pythonScript,
+    dbPath,
+    pair,
+    timeframe,
+    entry_model,
+    outputFile
+  ]);
+
+  let pythonOutput = '';
+  let pythonError = '';
+
+  pythonProcess.stdout.on('data', (data) => {
+    pythonOutput += data.toString();
+    console.log(`[Python] ${data.toString().trim()}`);
+  });
+
+  pythonProcess.stderr.on('data', (data) => {
+    pythonError += data.toString();
+    console.error(`[Python Err] ${data.toString().trim()}`);
+  });
+
+  pythonProcess.on('close', (code) => {
+    console.log(`Python backtesting exited with code ${code}`);
+    if (code !== 0) {
+      return res.status(500).json({ error: 'Backtesting failed', details: pythonError });
+    }
+
+    // Parse the JSON output from the magic block
+    const match = pythonOutput.match(/---JSON_START---\s*(.*?)\s*---JSON_END---/s);
+    let results = {};
+    if (match && match[1]) {
+      try {
+        results = JSON.parse(match[1]);
+      } catch (e) {
+        console.error("Failed to parse JSON results:", match[1]);
+      }
+    }
+
+    // Check if the file was created
+    if (fs.existsSync(outputFile)) {
+       res.json({
+         success: true,
+         message: 'Backtesting completed successfully.',
+         reportUrl: `/reports/${outputFileName}`,
+         results
+       });
+    } else {
+       res.status(500).json({ error: 'Backtest ran, but HTML report was not generated.', details: pythonOutput });
+    }
+  });
 });
 
 // Start background jobs
