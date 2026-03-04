@@ -1,12 +1,13 @@
 import { fetchWithAuth } from '../lib/api';
 import { supabase } from '../lib/supabase';
 import { useEffect, useState } from 'react';
-import { TrendingUp, Award, Target, Activity, Play } from 'lucide-react';
+import { TrendingUp, Award, Target, Activity, Play, Bot, Sparkles } from 'lucide-react';
+import { generatePerformanceReview } from '../lib/gemini';
 
 export default function Performance() {
   const [stats, setStats] = useState<any>(null);
-  const [isBacktesting, setIsBacktesting] = useState(false);
-  const [backtestResult, setBacktestResult] = useState<any>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [aiReport, setAiReport] = useState<string | null>(null);
 
   useEffect(() => {
     if (!supabase) return;
@@ -37,26 +38,17 @@ export default function Performance() {
       });
   }, []);
 
-  const handleRunBacktest = async () => {
-    setIsBacktesting(true);
-    setBacktestResult(null);
+  const handleGenerateReport = async () => {
+    setIsGenerating(true);
+    setAiReport(null);
     try {
-      const response = await fetchWithAuth('/api/backtest', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pair: 'XAUUSD', timeframe: '1h', entry_model: 'sniper' })
-      });
-      const data = await response.json();
-      if (data.success) {
-        setBacktestResult(data);
-      } else {
-        alert(`Backtest failed: ${data.error}`);
-      }
-    } catch (e) {
+      const report = await generatePerformanceReview(stats);
+      setAiReport(report);
+    } catch (e: any) {
       console.error(e);
-      alert('Error running backtest.');
+      alert(`Error generating AI Report: ${e.message}`);
     } finally {
-      setIsBacktesting(false);
+      setIsGenerating(false);
     }
   };
 
@@ -70,69 +62,48 @@ export default function Performance() {
           <p className="text-gray-400 mt-2">Historical win rate and statistics from closed signals.</p>
         </div>
 
-        {/* Developer Backtesting Tool */}
-        <div className="bg-white/5 border border-white/10 p-4 rounded-xl flex items-center justify-between md:justify-end gap-6 w-full md:w-auto">
+        {/* AI Performance Review Tool */}
+        <div className="bg-white/5 border border-purple-500/20 p-4 rounded-xl flex items-center justify-between md:justify-end gap-6 w-full md:w-auto hover:border-purple-500/40 transition-colors">
           <div className="text-sm">
-            <h4 className="text-white font-medium">Developer Tools</h4>
-            <p className="text-gray-400">Run Python <code>backtesting.py</code></p>
+            <h4 className="text-purple-400 font-medium flex items-center gap-2">
+              <Bot className="w-4 h-4" /> AI Trading Coach
+            </h4>
+            <p className="text-gray-400">Powered by Gemini AI</p>
           </div>
           <button
-            onClick={handleRunBacktest}
-            disabled={isBacktesting}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg transition-colors font-medium text-sm"
+            onClick={handleGenerateReport}
+            disabled={isGenerating}
+            className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg transition-colors font-medium text-sm shadow-[0_0_15px_rgba(168,85,247,0.4)]"
           >
-            {isBacktesting ? (
+            {isGenerating ? (
               <span className="flex items-center gap-2">
-                <Activity className="w-4 h-4 animate-spin" /> Running...
+                <Activity className="w-4 h-4 animate-spin" /> Analyzing...
               </span>
             ) : (
               <span className="flex items-center gap-2">
-                <Play className="w-4 h-4" /> Run XAUUSD Sniper
+                <Sparkles className="w-4 h-4" /> Generate Review
               </span>
             )}
           </button>
         </div>
       </div>
 
-      {backtestResult && (
-        <div className="bg-blue-900/20 border border-blue-500/30 p-6 rounded-2xl animate-fade-in">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-bold text-white">Backtest Completed!</h2>
-            <a
-              href={backtestResult.reportUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="text-blue-400 hover:text-blue-300 underline font-medium text-sm"
-            >
-              Open Interactive HTML Report
-            </a>
+      {aiReport && (
+        <div className="bg-purple-900/10 border border-purple-500/30 p-6 rounded-2xl animate-fade-in">
+          <div className="flex items-center gap-3 mb-6 border-b border-purple-500/20 pb-4">
+            <div className="p-2 bg-purple-500/20 rounded-lg">
+              <Bot className="w-6 h-6 text-purple-400" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-white">Institutional Coach Analysis</h2>
+              <p className="text-purple-300/60 text-sm">Generated by Gemini 2.5 Flash based on your recent statistics</p>
+            </div>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="bg-black/40 p-3 rounded-lg border border-white/5">
-              <div className="text-gray-400 text-xs mb-1">Return</div>
-              <div className={`text-lg font-bold ${backtestResult.results['Return [%]'] >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                {backtestResult.results['Return [%]'].toFixed(2)}%
-              </div>
-            </div>
-            <div className="bg-black/40 p-3 rounded-lg border border-white/5">
-              <div className="text-gray-400 text-xs mb-1">Win Rate</div>
-              <div className="text-lg font-bold text-white">
-                {backtestResult.results['Win Rate [%]'].toFixed(1)}%
-              </div>
-            </div>
-            <div className="bg-black/40 p-3 rounded-lg border border-white/5">
-              <div className="text-gray-400 text-xs mb-1">Trades</div>
-              <div className="text-lg font-bold text-white">
-                {backtestResult.results['Total Trades']}
-              </div>
-            </div>
-            <div className="bg-black/40 p-3 rounded-lg border border-white/5">
-              <div className="text-gray-400 text-xs mb-1">Max Drawdown</div>
-              <div className="text-lg font-bold text-red-400">
-                {backtestResult.results['Max Drawdown [%]'].toFixed(2)}%
-              </div>
-            </div>
+          <div className="space-y-4 text-gray-300 leading-relaxed max-w-4xl">
+            {aiReport.split('\n\n').map((paragraph, idx) => (
+              <p key={idx} dangerouslySetInnerHTML={{ __html: paragraph.replace(/\*\*(.*?)\*\*/g, '<strong class="text-white font-semibold">$1</strong>') }} />
+            ))}
           </div>
         </div>
       )}
