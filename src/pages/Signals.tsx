@@ -1,4 +1,5 @@
 import { fetchWithAuth } from '../lib/api';
+import { supabase } from '../lib/supabase';
 import { useEffect, useState } from 'react';
 import { Filter, Search } from 'lucide-react';
 
@@ -8,10 +9,15 @@ export default function Signals() {
   const [pairFilter, setPairFilter] = useState('ALL');
 
   useEffect(() => {
-    fetchWithAuth('/api/signals/active')
-      .then((res) => res.json())
-      .then((data) => setSignals(data))
-      .catch((err) => console.error(err));
+    if (!supabase) return;
+    supabase.from('signals')
+      .select('*')
+      .in('status', ['active', 'waiting'])
+      .order('created_at', { ascending: false })
+      .then(({ data: signals, error }) => {
+          if (error) { console.error(error); return; }
+          if (signals) setSignals(signals as any);
+      });
   }, []);
 
   const filteredSignals = signals.filter((s: any) => {

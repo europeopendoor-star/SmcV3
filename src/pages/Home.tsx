@@ -1,4 +1,5 @@
 import { fetchWithAuth } from '../lib/api';
+import { supabase } from '../lib/supabase';
 import { Link } from 'react-router-dom';
 import { ArrowRight, Target, Shield, Zap } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -7,10 +8,15 @@ export default function Home() {
   const [signals, setSignals] = useState([]);
 
   useEffect(() => {
-    fetchWithAuth('/api/signals/active')
-      .then((res) => res.json())
-      .then((data) => setSignals(data.slice(0, 3)))
-      .catch((err) => console.error(err));
+    if (!supabase) return;
+    supabase.from('signals')
+      .select('*')
+      .in('status', ['active', 'waiting'])
+      .order('created_at', { ascending: false })
+      .then(({ data: signals, error }) => {
+          if (error) { console.error(error); return; }
+          if (signals) setSignals(signals.slice(0, 3) as any);
+      });
   }, []);
 
   return (
