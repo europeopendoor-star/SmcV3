@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { IChartApi, ISeriesApi, MouseEventParams, Time } from 'lightweight-charts';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { IChartApi, ISeriesApi, MouseEventParams, Time, IPriceLine } from 'lightweight-charts';
 import { Crosshair } from 'lucide-react';
 
 interface RRBox {
@@ -24,7 +24,94 @@ export const RiskRewardTool: React.FC<RiskRewardToolProps> = ({ chartRef, series
   const [tempSl, setTempSl] = useState<{ time: Time, price: number } | null>(null);
   const [crosshairPoint, setCrosshairPoint] = useState<{ time: Time, price: number } | null>(null);
 
+
   const [targetRR, setTargetRR] = useState<number>(3); // Selectable RR ratio
+  const priceLinesRef = useRef<IPriceLine[]>([]);
+
+  // Function to clear all price lines
+  const clearPriceLines = useCallback(() => {
+     if (seriesRef.current) {
+         priceLinesRef.current.forEach(line => seriesRef.current?.removePriceLine(line));
+         priceLinesRef.current = [];
+     }
+  }, [seriesRef]);
+
+  // Sync Price Lines whenever boxes change
+  useEffect(() => {
+     clearPriceLines();
+     if (!seriesRef.current) return;
+
+     boxes.forEach(box => {
+         const entryLine = seriesRef.current!.createPriceLine({
+            price: box.entryPrice,
+            color: '#a3a3a3',
+            lineWidth: 2,
+            lineStyle: 2,
+            axisLabelVisible: true,
+            title: 'Entry',
+         });
+         const slLine = seriesRef.current!.createPriceLine({
+            price: box.slPrice,
+            color: '#ef4444',
+            lineWidth: 2,
+            lineStyle: 2,
+            axisLabelVisible: true,
+            title: 'SL',
+         });
+         const tpLine = seriesRef.current!.createPriceLine({
+            price: box.tpPrice,
+            color: '#22c55e',
+            lineWidth: 2,
+            lineStyle: 2,
+            axisLabelVisible: true,
+            title: 'TP',
+         });
+         priceLinesRef.current.push(entryLine, slLine, tpLine);
+     });
+
+     // also handle temp drawing lines
+     if (drawingState === 'setting_sl' && tempEntry && tempSl) {
+        // temp Sl is just current crosshair essentially
+         const entryLine = seriesRef.current!.createPriceLine({
+            price: tempEntry.price,
+            color: '#a3a3a3',
+            lineWidth: 1,
+            lineStyle: 3,
+            axisLabelVisible: true,
+            title: 'Entry',
+         });
+         const currentLine = seriesRef.current!.createPriceLine({
+            price: tempSl.price,
+            color: '#ef4444',
+            lineWidth: 1,
+            lineStyle: 3,
+            axisLabelVisible: true,
+            title: 'SL',
+         });
+
+         const direction = tempSl.price < tempEntry.price ? 'long' : 'short';
+         const risk = Math.abs(tempEntry.price - tempSl.price);
+         const tpPrice = direction === 'long'
+             ? tempEntry.price + (risk * targetRR)
+             : tempEntry.price - (risk * targetRR);
+
+         const tpLine = seriesRef.current!.createPriceLine({
+            price: tpPrice,
+            color: '#22c55e',
+            lineWidth: 1,
+            lineStyle: 3,
+            axisLabelVisible: true,
+            title: 'TP',
+         });
+         priceLinesRef.current.push(entryLine, currentLine, tpLine);
+     }
+  }, [boxes, drawingState, tempEntry, tempSl, targetRR, clearPriceLines, seriesRef]);
+
+  // Clean up on unmount
+  useEffect(() => {
+      return () => clearPriceLines();
+  }, [clearPriceLines]);
+
 
   const handleChartClick = useCallback((param: MouseEventParams) => {
     if (!param.point || !param.time || !seriesRef.current) return;

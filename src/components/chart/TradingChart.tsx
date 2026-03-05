@@ -1,6 +1,8 @@
+import { Maximize } from 'lucide-react';
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { createChart, IChartApi, ISeriesApi, CandlestickData, ColorType, CandlestickSeries, HistogramSeries, CrosshairMode, createSeriesMarkers } from 'lightweight-charts';
 import { RiskRewardTool } from './RiskRewardTool';
+import { SupportResistanceTool } from './SupportResistanceTool';
 
 export interface ZoneData {
   time1: string;
@@ -40,7 +42,7 @@ export const TradingChart: React.FC<TradingChartProps> = ({ data, zones = [], on
         background: { type: ColorType.Solid, color: '#0a0a0a' },
         textColor: '#d1d5db',
       },
-      grid: {
+            grid: {
         vertLines: { color: '#1f2937' },
         horzLines: { color: '#1f2937' },
       },
@@ -70,7 +72,7 @@ export const TradingChart: React.FC<TradingChartProps> = ({ data, zones = [], on
     });
     volumeSeries.priceScale().applyOptions({
       scaleMargins: {
-        top: 0.8, // leave top 80% for candlestick
+        top: 0.85, // leave top 85% for candlestick
         bottom: 0,
       },
     });
@@ -138,7 +140,7 @@ export const TradingChart: React.FC<TradingChartProps> = ({ data, zones = [], on
       const volumeData = data.map(d => ({
         time: d.time,
         value: d.volume || 0,
-        color: d.close >= d.open ? 'rgba(34, 197, 94, 0.4)' : 'rgba(239, 68, 68, 0.4)'
+        color: d.close >= d.open ? 'rgba(34, 197, 94, 0.8)' : 'rgba(239, 68, 68, 0.8)'
       }));
       volumeSeriesRef.current.setData(volumeData);
 
@@ -226,11 +228,23 @@ export const TradingChart: React.FC<TradingChartProps> = ({ data, zones = [], on
 
   return (
     <div className="relative w-full h-full flex flex-col bg-black border border-white/10 rounded-2xl overflow-hidden p-1 group">
-      <div className="absolute top-4 left-4 z-10 text-white/50 font-bold pointer-events-none text-2xl">
-        {title}
+      {/* Move Legend here */}
+      <div className="absolute top-4 left-4 z-30 pointer-events-none flex flex-col gap-1">
+        <div className="text-white/30 font-bold text-2xl tracking-widest">{title}</div>
+        {tooltipData && (
+          <div className="flex gap-4 text-xs font-mono text-gray-300 bg-black/50 p-1.5 rounded backdrop-blur-sm border border-white/5">
+             <div className="flex gap-1"><span className="text-gray-500">O</span><span className={Number(tooltipData.close) >= Number(tooltipData.open) ? 'text-green-400' : 'text-red-400'}>{tooltipData.open}</span></div>
+             <div className="flex gap-1"><span className="text-gray-500">H</span><span className={Number(tooltipData.close) >= Number(tooltipData.open) ? 'text-green-400' : 'text-red-400'}>{tooltipData.high}</span></div>
+             <div className="flex gap-1"><span className="text-gray-500">L</span><span className={Number(tooltipData.close) >= Number(tooltipData.open) ? 'text-green-400' : 'text-red-400'}>{tooltipData.low}</span></div>
+             <div className="flex gap-1"><span className="text-gray-500">C</span><span className={Number(tooltipData.close) >= Number(tooltipData.open) ? 'text-green-400' : 'text-red-400'}>{tooltipData.close}</span></div>
+          </div>
+        )}
       </div>
 
-      <div ref={chartContainerRef} className="w-full flex-grow h-0 relative">
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
+        <span className="text-white/5 font-bold text-7xl select-none">{title}</span>
+      </div>
+      <div ref={chartContainerRef} className="w-full flex-grow h-0 relative z-10">
         {/* Render interactive zones overlaid on the chart */}
         <div className="absolute top-0 left-0 w-full h-full pointer-events-none overflow-hidden z-0">
           {renderedZones.map(z => (
@@ -251,27 +265,29 @@ export const TradingChart: React.FC<TradingChartProps> = ({ data, zones = [], on
        </div>
 
        {chartRef.current && seriesRef.current && (
-           <RiskRewardTool chartRef={chartRef} seriesRef={seriesRef} />
+           <>
+             <SupportResistanceTool chartRef={chartRef} seriesRef={seriesRef} />
+             <RiskRewardTool chartRef={chartRef} seriesRef={seriesRef} />
+           </>
        )}
+
+       <div className="absolute bottom-4 right-4 z-20">
+         <button
+           onClick={() => {
+             if (chartRef.current) {
+               chartRef.current.timeScale().fitContent();
+               chartRef.current.priceScale('right').applyOptions({ autoScale: true });
+             }
+           }}
+           className="p-2 rounded-lg bg-black/50 text-gray-400 border border-white/10 hover:text-white hover:bg-white/10 transition-colors"
+           title="Auto Fit Data"
+         >
+           <Maximize className="w-5 h-5" />
+         </button>
+       </div>
 
       </div>
 
-      {tooltipData && (
-        <div
-          ref={tooltipRef}
-          className="absolute z-50 pointer-events-none bg-black/80 border border-white/20 p-3 rounded-lg text-xs font-mono shadow-xl backdrop-blur-sm"
-          style={{
-            left: Math.min(Math.max(tooltipData.left + 15, 0), (chartContainerRef.current?.clientWidth || 0) - 150),
-            top: Math.min(Math.max(tooltipData.top + 15, 0), (chartContainerRef.current?.clientHeight || 0) - 120),
-          }}
-        >
-           <div className="text-gray-400 mb-1 border-b border-white/10 pb-1">{tooltipData.date}</div>
-           <div className="flex justify-between gap-4"><span className="text-gray-500">O</span><span className="text-white">{tooltipData.open}</span></div>
-           <div className="flex justify-between gap-4"><span className="text-gray-500">H</span><span className="text-white">{tooltipData.high}</span></div>
-           <div className="flex justify-between gap-4"><span className="text-gray-500">L</span><span className="text-white">{tooltipData.low}</span></div>
-           <div className="flex justify-between gap-4"><span className="text-gray-500">C</span><span className="text-white">{tooltipData.close}</span></div>
-        </div>
-      )}
-    </div>
+          </div>
   );
 };
