@@ -142,6 +142,44 @@ async function detectOB(candles: any[], pair: string, timeframe: string) {
   }
 }
 
+
+// Detect and mark zones as mitigated if price touches them
+export async function updateZoneMitigations(pair: string, timeframe: string) {
+  // Get all unmitigated zones for this pair/tf
+  const { data: zones, error } = await db.from('zones')
+    .select('*')
+    .eq('pair', pair)
+    .eq('timeframe', timeframe)
+    .eq('mitigated', 0);
+
+  if (error || !zones || zones.length === 0) return;
+
+  for (const zone of zones) {
+    // Check candles that occurred AFTER the zone was formed
+    const { data: candles, error: candleErr } = await db.from('candles')
+      .select('high, low')
+      .eq('pair', pair)
+      .eq('timeframe', timeframe)
+      .gt('time', zone.time)
+      .order('time', { ascending: true });
+
+    if (candleErr || !candles || candles.length === 0) continue;
+
+    let mitigated = false;
+    for (const candle of candles) {
+      // If candle overlaps with the zone, it's mitigated
+      if (candle.low <= zone.top && candle.high >= zone.bottom) {
+        mitigated = true;
+        break;
+      }
+    }
+
+    if (mitigated) {
+      await db.from('zones').update({ mitigated: 1 }).eq('id', zone.id);
+    }
+  }
+}
+
 export async function runSMCEngine() {
   const pairs = ['XAUUSD', 'EURUSD', 'GBPUSD', 'USDJPY', 'AUDUSD', 'USDCAD'];
   const timeframes = ['H1', 'H4'];
@@ -160,6 +198,9 @@ export async function runSMCEngine() {
       await detectStructure(swings, pair, tf);
       await detectFVG(candles, pair, tf);
       await detectOB(candles, pair, tf);
+
+      // Update mitigations after detecting new zones
+      await updateZoneMitigations(pair, tf);
     }
   }
 }
