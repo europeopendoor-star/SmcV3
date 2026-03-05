@@ -42,7 +42,7 @@ export const TradingChart: React.FC<TradingChartProps> = ({ data, zones = [], on
         background: { type: ColorType.Solid, color: '#0a0a0a' },
         textColor: '#d1d5db',
       },
-            grid: {
+      grid: {
         vertLines: { color: '#1f2937' },
         horzLines: { color: '#1f2937' },
       },
@@ -52,7 +52,25 @@ export const TradingChart: React.FC<TradingChartProps> = ({ data, zones = [], on
       },
       crosshair: {
         mode: CrosshairMode.Normal,
-      }
+      },
+      handleScroll: {
+        mouseWheel: true,
+        pressedMouseMove: true,
+        horzTouchDrag: true,
+        vertTouchDrag: true,
+      },
+      handleScale: {
+        mouseWheel: true,
+        pinch: true,
+        axisPressedMouseMove: {
+          time: true,
+          price: true,
+        },
+      },
+      kineticScroll: {
+        touch: true,
+        mouse: false,
+      },
     });
 
     const series = chart.addSeries(CandlestickSeries, {
