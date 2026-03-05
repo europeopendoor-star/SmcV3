@@ -229,7 +229,7 @@ export const TradingChart: React.FC<TradingChartProps> = ({ data, zones = [], on
   return (
     <div className="relative w-full h-full flex flex-col bg-black border border-white/10 rounded-2xl overflow-hidden p-1 group">
       {/* Move Legend here */}
-      <div className="absolute top-4 left-4 z-30 pointer-events-none flex flex-col gap-1">
+      <div className="absolute top-4 left-4 z-10 pointer-events-none flex flex-col gap-1">
         <div className="text-white/30 font-bold text-2xl tracking-widest">{title}</div>
         {tooltipData && (
           <div className="flex gap-4 text-xs font-mono text-gray-300 bg-black/50 p-1.5 rounded backdrop-blur-sm border border-white/5">
@@ -241,9 +241,7 @@ export const TradingChart: React.FC<TradingChartProps> = ({ data, zones = [], on
         )}
       </div>
 
-      <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
-        <span className="text-white/5 font-bold text-7xl select-none">{title}</span>
-      </div>
+
       <div ref={chartContainerRef} className="w-full flex-grow h-0 relative z-10">
         {/* Render interactive zones overlaid on the chart */}
         <div className="absolute top-0 left-0 w-full h-full pointer-events-none overflow-hidden z-0">
