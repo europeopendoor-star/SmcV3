@@ -1,18 +1,10 @@
-import { fetchWithAuth } from '../lib/api';
-import { supabase } from '../lib/supabase';
-import { useEffect, useState } from 'react';
-import { MultiChartLayout } from '../components/chart/MultiChartLayout';
+const fs = require('fs');
+const file = 'src/pages/ChartView.tsx';
+let code = fs.readFileSync(file, 'utf8');
 
-export default function ChartView() {
-  const [pair, setPair] = useState('XAUUSD');
-  const [htfTimeframe, setHtfTimeframe] = useState('H1');
-  const [ltfTimeframe, setLtfTimeframe] = useState('M5');
+// We need to rewrite the useEffect in ChartView.tsx to fetch directly from Supabase candles table instead of twelveDataSymbol/fetchHistoricalData
 
-  const [htfData, setHtfData] = useState<any[]>([]);
-  const [ltfData, setLtfData] = useState<any[]>([]);
-  const [htfZones, setHtfZones] = useState<any[]>([]);
-
-
+const newUseEffect = `
   useEffect(() => {
     if (!supabase) return;
 
@@ -138,59 +130,13 @@ export default function ChartView() {
       });
 
   }, [pair, htfTimeframe, ltfTimeframe]);
+`;
 
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap justify-between items-center gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-white tracking-tight">Interactive Chart</h1>
-          <p className="text-gray-400 mt-1">Split-view HTF & LTF sync.</p>
-        </div>
-        <div className="flex gap-4">
-          <select
-            value={pair}
-            onChange={(e) => setPair(e.target.value)}
-            className="bg-black border border-white/10 text-white rounded-lg px-4 py-2 focus:ring-2 focus:ring-yellow-500 outline-none"
-          >
-            <option value="XAUUSD">XAUUSD</option>
-            <option value="EURUSD">EURUSD</option>
-            <option value="GBPUSD">GBPUSD</option>
-            <option value="USDJPY">USDJPY</option>
-            <option value="AUDUSD">AUDUSD</option>
-            <option value="USDCAD">USDCAD</option>
-          </select>
-          <div className="flex items-center gap-2">
-             <span className="text-sm text-gray-400">HTF:</span>
-             <select
-                value={htfTimeframe}
-                onChange={(e) => setHtfTimeframe(e.target.value)}
-                className="bg-black border border-white/10 text-white rounded-lg px-2 py-1 focus:ring-2 focus:ring-yellow-500 outline-none text-sm"
-              >
-                <option value="H1">H1</option>
-                <option value="H4">H4</option>
-              </select>
-          </div>
-          <div className="flex items-center gap-2">
-             <span className="text-sm text-gray-400">LTF:</span>
-             <select
-                value={ltfTimeframe}
-                onChange={(e) => setLtfTimeframe(e.target.value)}
-                className="bg-black border border-white/10 text-white rounded-lg px-2 py-1 focus:ring-2 focus:ring-yellow-500 outline-none text-sm"
-              >
-                <option value="M1">M1</option>
-                <option value="M5">M5</option>
-              </select>
-          </div>
-        </div>
-      </div>
+// Replace everything inside the useEffect definition
+const regex = /useEffect\(\(\) => \{[\s\S]*?\}, \[pair, htfTimeframe, ltfTimeframe\]\);/m;
+code = code.replace(regex, newUseEffect.trim());
 
-      <MultiChartLayout
-        htfData={htfData}
-        ltfData={ltfData}
-        htfZones={htfZones}
-        htfTitle={`SMC Context (${htfTimeframe})`}
-        ltfTitle={`Sniper Entry (${ltfTimeframe})`}
-      />
-    </div>
-  );
-}
+// Remove import of fetchHistoricalData if it exists
+code = code.replace(/import { fetchHistoricalData } from '\.\.\/lib\/marketApi';\n/, '');
+
+fs.writeFileSync(file, code);
