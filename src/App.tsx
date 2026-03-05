@@ -65,24 +65,24 @@ export default function App() {
             
             {/* Protected Routes */}
             <Route path="/signals" element={
-              <ProtectedRoute>
+              <>
                 <Signals />
-              </ProtectedRoute>
+              </>
             } />
             <Route path="/chart" element={
-              <ProtectedRoute>
+              <>
                 <ChartView />
-              </ProtectedRoute>
+              </>
             } />
             <Route path="/alerts" element={
-              <ProtectedRoute>
+              <>
                 <Alerts />
-              </ProtectedRoute>
+              </>
             } />
             <Route path="/performance" element={
-              <ProtectedRoute>
+              <>
                 <Performance />
-              </ProtectedRoute>
+              </>
             } />
           </Routes>
         </main>

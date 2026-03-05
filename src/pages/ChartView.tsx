@@ -2,6 +2,7 @@ import { fetchWithAuth } from '../lib/api';
 import { supabase } from '../lib/supabase';
 import { useEffect, useState } from 'react';
 import { MultiChartLayout } from '../components/chart/MultiChartLayout';
+import { fetchHistoricalData } from '../lib/marketApi';
 
 export default function ChartView() {
   const [pair, setPair] = useState('XAUUSD');
@@ -12,25 +13,26 @@ export default function ChartView() {
   const [ltfData, setLtfData] = useState<any[]>([]);
   const [htfZones, setHtfZones] = useState<any[]>([]);
 
+
   useEffect(() => {
-    // Fetch HTF candles
     if (!supabase) return;
-    supabase.from('candles')
-      .select('*')
-      .eq('pair', pair)
-      .eq('timeframe', htfTimeframe)
-      .order('time', { ascending: true })
-      .limit(500)
-      .then(({ data, error }) => {
-        if (error) {
-           console.error(error);
-           return;
-        }
+
+    const twelveDataSymbol = pair.slice(0, 3) + '/' + pair.slice(3);
+    const htfInterval = htfTimeframe === 'H1' ? '1h' : '4h';
+    const ltfInterval = ltfTimeframe === 'M1' ? '1min' : '5min';
+
+    // Fetch HTF candles from Twelve Data proxy
+    fetchHistoricalData(twelveDataSymbol, htfInterval)
+      .then((data) => {
         if (!data || data.length === 0) {
            setHtfData([]);
            return;
         }
-        const formattedData = data.map((d: any, index: number) => {
+
+        // Ensure data is array
+        const dataArr = Array.isArray(data) ? data : [];
+
+        const formattedData = dataArr.map((d: any, index: number) => {
            let markers = [];
            // Mock BOS/CHoCH markers
            if (index % 50 === 0 && index > 0) {
@@ -51,7 +53,7 @@ export default function ChartView() {
         });
         setHtfData(formattedData);
 
-        // Fetch Real Zones from Backend
+        // Fetch Real Zones from Backend (we still use local DB for structure)
         supabase.from('zones')
           .select('*')
           .eq('pair', pair)
@@ -64,41 +66,36 @@ export default function ChartView() {
                  return;
              }
              if (zones && formattedData.length > 0) {
-                // Since the backend currently only returns top/bottom prices for unmitigated zones,
-                // we will render them as rectangles extending from 50 candles ago to the latest candle.
-                // In the future, the backend should be updated to return creation_time for the start of the box.
-                const time1 = formattedData[Math.max(0, formattedData.length - 50)].time;
-                const time2 = formattedData[formattedData.length - 1].time;
+                const time1 = formattedData[Math.max(0, formattedData.length - 50)]?.time;
+                const time2 = formattedData[formattedData.length - 1]?.time;
 
-                const mappedZones = zones.map((zone: any) => ({
-                    time1: time1,
-                    time2: time2,
-                    price1: zone.top,
-                    price2: zone.bottom,
-                    color: zone.type === 'OB' ? 'rgba(59, 130, 246, 0.3)' : 'rgba(168, 85, 247, 0.3)'
-                }));
-                setHtfZones(mappedZones);
+                if (time1 && time2) {
+                    const mappedZones = zones.map((zone: any) => ({
+                        time1: time1,
+                        time2: time2,
+                        price1: zone.top,
+                        price2: zone.bottom,
+                        color: zone.type === 'OB' ? 'rgba(59, 130, 246, 0.3)' : 'rgba(168, 85, 247, 0.3)'
+                    }));
+                    setHtfZones(mappedZones);
+                }
              }
           });
+      })
+      .catch((err) => {
+          console.error("Error fetching HTF from Twelve Data:", err);
       });
 
-    // Fetch LTF candles
-    supabase.from('candles')
-      .select('*')
-      .eq('pair', pair)
-      .eq('timeframe', ltfTimeframe)
-      .order('time', { ascending: true })
-      .limit(500)
-      .then(({ data, error }) => {
-        if (error) {
-           console.error(error);
-           return;
-        }
+    // Fetch LTF candles from Twelve Data
+    fetchHistoricalData(twelveDataSymbol, ltfInterval)
+      .then((data) => {
         if (!data || data.length === 0) {
            setLtfData([]);
            return;
         }
-        const formattedData = data.map((d: any, index: number) => {
+
+        const dataArr = Array.isArray(data) ? data : [];
+        const formattedData = dataArr.map((d: any, index: number) => {
            let markers = [];
 
            if (index % 60 === 0 && index > 0) {
@@ -106,16 +103,16 @@ export default function ChartView() {
            }
 
            // Mock Trade Execution Sequence
-           if (index === data.length - 30) {
+           if (index === dataArr.length - 30) {
                markers.push({ time: d.time, position: 'belowBar', color: '#22c55e', shape: 'arrowUp', text: 'ENTRY' });
            }
-           if (index === data.length - 25) {
+           if (index === dataArr.length - 25) {
                markers.push({ time: d.time, position: 'belowBar', color: '#ef4444', shape: 'circle', text: 'SL Hit' });
            }
-           if (index === data.length - 15) {
+           if (index === dataArr.length - 15) {
                markers.push({ time: d.time, position: 'aboveBar', color: '#22c55e', shape: 'arrowDown', text: 'ENTRY (Short)' });
            }
-           if (index === data.length - 5) {
+           if (index === dataArr.length - 5) {
                markers.push({ time: d.time, position: 'belowBar', color: '#22c55e', shape: 'square', text: 'TP Hit (WIN)' });
            }
 
@@ -130,7 +127,11 @@ export default function ChartView() {
           };
         });
         setLtfData(formattedData);
+      })
+      .catch(err => {
+          console.error("Error fetching LTF from Twelve Data:", err);
       });
+
   }, [pair, htfTimeframe, ltfTimeframe]);
 
   return (
