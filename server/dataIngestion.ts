@@ -1,53 +1,59 @@
+import dotenv from 'dotenv';
+dotenv.config();
 import db from './db.js';
-import YahooFinance from 'yahoo-finance2';
 
-const yahooFinance = new YahooFinance();
-
+// Fallback logic, we'll implement fully in the next steps
 const pairs = ['XAUUSD', 'EURUSD', 'GBPUSD', 'USDJPY', 'AUDUSD', 'USDCAD'];
+
+// Map our symbols to FCSAPI formats
 const symbolMap: Record<string, string> = {
-  'XAUUSD': 'GC=F', // Gold Futures
-  'EURUSD': 'EURUSD=X',
-  'GBPUSD': 'GBPUSD=X',
-  'USDJPY': 'JPY=X',
-  'AUDUSD': 'AUDUSD=X',
-  'USDCAD': 'CAD=X'
+  'XAUUSD': 'XAU/USD', // Gold against USD
+  'EURUSD': 'EUR/USD',
+  'GBPUSD': 'GBP/USD',
+  'USDJPY': 'USD/JPY',
+  'AUDUSD': 'AUD/USD',
+  'USDCAD': 'USD/CAD'
 };
 
-// @ts-ignore
-if (yahooFinance.suppressNotices) {
-  // @ts-ignore
-  yahooFinance.suppressNotices(['yahooFinance.chart']);
-}
-
-async function fetchAndStore(pair: string, timeframe: string, yfInterval: '1m' | '5m' | '1h', daysBack: number) {
+async function fetchAndStore(pair: string, timeframe: string, period: '1m' | '5m' | '1h') {
   const symbol = symbolMap[pair];
-  const period1 = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
-  
-  try {
-    const result = await yahooFinance.chart(symbol, {
-      period1,
-      interval: yfInterval,
-    }) as any;
+  const apiKey = process.env.FCSAPI_KEY;
 
-    if (result && result.quotes) {
+  if (!apiKey) {
+    console.warn('FCSAPI_KEY is not set. Skipping data ingestion.');
+    return;
+  }
+
+  const url = `https://fcsapi.com/api-v3/forex/history?symbol=${symbol}&period=${period}&access_key=${apiKey}`;
+
+  try {
+    const response = await fetch(url);
+    const result = await response.json();
+
+    if (result && result.status && result.response) {
       const inserts = [];
-      for (const q of result.quotes) {
-        if (q.open === null || q.close === null) continue;
+      const candles = Object.values(result.response);
+
+      for (const q of candles as any[]) {
+        if (q.o === null || q.c === null) continue;
         inserts.push({
           pair,
           timeframe,
-          time: Math.floor(new Date(q.date).getTime() / 1000),
-          open: q.open,
-          high: q.high,
-          low: q.low,
-          close: q.close,
-          volume: q.volume || 0
+          time: parseInt(q.t, 10),
+          open: parseFloat(q.o),
+          high: parseFloat(q.h),
+          low: parseFloat(q.l),
+          close: parseFloat(q.c),
+          volume: parseFloat(q.v || '0')
         });
       }
+
       if (inserts.length > 0) {
-        // Upserting to emulate INSERT OR IGNORE
+        // Supabase upsert
         await db.from('candles').upsert(inserts, { onConflict: 'pair, timeframe, time', ignoreDuplicates: true });
       }
+    } else {
+      console.warn(`FCSAPI returned an error or empty data for ${pair} ${timeframe}:`, result);
     }
   } catch (error) {
     console.error(`Failed to fetch ${timeframe} for ${pair}:`, error);
@@ -85,47 +91,80 @@ async function buildH4FromH1(pair: string) {
   }
 }
 
+// Queue system to manage rate limits (3 requests per minute for free tier)
+const requestQueue: (() => Promise<void>)[] = [];
+let isProcessingQueue = false;
+
+async function processQueue() {
+  if (isProcessingQueue) return;
+  isProcessingQueue = true;
+
+  while (requestQueue.length > 0) {
+    const batch = requestQueue.splice(0, 2); // Take up to 2 requests to be safe (limit is 3/min, we stay under it)
+
+    for (const task of batch) {
+      await task();
+    }
+
+    if (requestQueue.length > 0) {
+      // Wait for 60 seconds before processing the next batch to respect the limit
+      await new Promise(resolve => setTimeout(resolve, 60000));
+    }
+  }
+
+  isProcessingQueue = false;
+}
+
+function queueFetch(pair: string, timeframe: string, period: '1m' | '5m' | '1h') {
+  requestQueue.push(() => fetchAndStore(pair, timeframe, period));
+  processQueue();
+}
+
 export async function ingestHistoricalData() {
   const { count, error } = await db.from('candles').select('*', { count: 'exact', head: true });
 
   if (count === 0 || error) {
-    console.log('Fetching historical data from Yahoo Finance...');
+    console.log('Fetching historical data from FCSAPI...');
+
     for (const pair of pairs) {
-      await fetchAndStore(pair, 'H1', '1h', 30); // Last 30 days of H1
-      await buildH4FromH1(pair);
-      await fetchAndStore(pair, 'M5', '5m', 5);  // Last 5 days of M5
-      await fetchAndStore(pair, 'M1', '1m', 2);  // Last 2 days of M1
-      
-      // Small delay to avoid rate limits
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Push tasks to queue
+      requestQueue.push(async () => {
+        await fetchAndStore(pair, 'H1', '1h');
+        await buildH4FromH1(pair);
+      });
+      requestQueue.push(() => fetchAndStore(pair, 'M5', '5m'));
+      requestQueue.push(() => fetchAndStore(pair, 'M1', '1m'));
     }
-    console.log('Historical data ingestion complete.');
+
+    processQueue();
   }
 }
 
+// Keep track of which pair to update next to avoid hitting rate limit
+let currentPairIndex = 0;
+
 // Start live ingestion
 export function startLiveIngestion() {
+  // Instead of fetching all pairs every minute, we fetch one pair at a time
+  // and stagger them. The limit is 3 requests per minute.
+  // To be safe, we'll do 1 request every 25 seconds.
+
   setInterval(async () => {
-    for (const pair of pairs) {
-      // Fetch the latest 1m data
-      await fetchAndStore(pair, 'M1', '1m', 1);
-      
-      const now = new Date();
-      const minutes = now.getMinutes();
-      
-      // Every 5 minutes, update M5
-      if (minutes % 5 === 0) {
-        await fetchAndStore(pair, 'M5', '5m', 1);
-      }
-      
-      // Every hour, update H1 and rebuild H4
-      if (minutes === 0) {
-        await fetchAndStore(pair, 'H1', '1h', 1);
-        await buildH4FromH1(pair);
-      }
-      
-      // Small delay between pairs
-      await new Promise(resolve => setTimeout(resolve, 500));
+    const pair = pairs[currentPairIndex];
+    const now = new Date();
+    const minutes = now.getMinutes();
+
+    // We only fetch one timeframe per cycle to respect the 3 req/min limit.
+    // Prioritize M1, then M5, then H1
+    if (minutes === 0) {
+      await fetchAndStore(pair, 'H1', '1h');
+      await buildH4FromH1(pair);
+    } else if (minutes % 5 === 0) {
+      await fetchAndStore(pair, 'M5', '5m');
+    } else {
+      await fetchAndStore(pair, 'M1', '1m');
     }
-  }, 60000); // Run every minute
+
+    currentPairIndex = (currentPairIndex + 1) % pairs.length;
+  }, 25000); // Run every 25 seconds (max ~2.4 req/min, safe within 3 req/min)
 }
