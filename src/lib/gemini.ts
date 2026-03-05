@@ -1,9 +1,7 @@
 import { GoogleGenAI } from '@google/genai';
 
 // In vite.config.ts, process.env.GEMINI_API_KEY is injected into the client bundle
-const apiKey = typeof process !== 'undefined' && process.env && process.env.GEMINI_API_KEY
-  ? process.env.GEMINI_API_KEY
-  : '';
+const apiKey = process.env.GEMINI_API_KEY || '';
 
 let ai: GoogleGenAI | null = null;
 if (apiKey) {
