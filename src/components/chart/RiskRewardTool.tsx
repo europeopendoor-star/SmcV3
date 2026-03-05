@@ -186,98 +186,7 @@ export const RiskRewardTool: React.FC<RiskRewardToolProps> = ({ chartRef, series
     };
   }, [drawingState, handleChartClick, handleCrosshairMove, chartRef]);
 
-  // Rendering overlay boxes
-  const [renderedBoxes, setRenderedBoxes] = useState<any[]>([]);
 
-  const updateBoxes = useCallback(() => {
-    if (!chartRef.current || !seriesRef.current) return;
-
-    let boxesToRender = [];
-
-    // Draw finalized boxes
-    for (const box of boxes) {
-        try {
-            const timeScale = chartRef.current.timeScale();
-            const series = seriesRef.current;
-
-            const x = timeScale.timeToCoordinate(box.entryTime as any);
-            const entryY = series.priceToCoordinate(box.entryPrice);
-            const slY = series.priceToCoordinate(box.slPrice);
-            const tpY = series.priceToCoordinate(box.tpPrice);
-
-            if (x !== null && entryY !== null && slY !== null && tpY !== null) {
-               const logicalX = timeScale.coordinateToLogical(x);
-               if (logicalX === null) continue;
-               const endX = timeScale.logicalToCoordinate((logicalX + 10) as any);
-               if (endX === null) continue;
-
-               const width = endX - x;
-
-               boxesToRender.push({
-                   id: box.id,
-                   x, width,
-                   slBox: { y: Math.min(entryY, slY), h: Math.abs(entryY - slY), color: 'rgba(239, 68, 68, 0.3)' },
-                   tpBox: { y: Math.min(entryY, tpY), h: Math.abs(entryY - tpY), color: 'rgba(34, 197, 94, 0.3)' },
-                   label: `${box.direction.toUpperCase()} - ${box.rrRatio}R`
-               });
-            }
-        } catch (e) {}
-    }
-
-    // Draw active drawing temp box
-    if (drawingState === 'setting_sl' && tempEntry && crosshairPoint) {
-       try {
-            const timeScale = chartRef.current.timeScale();
-            const series = seriesRef.current;
-
-            const x = timeScale.timeToCoordinate(tempEntry.time as any);
-            const entryY = series.priceToCoordinate(tempEntry.price);
-            const currentY = series.priceToCoordinate(crosshairPoint.price);
-
-            if (x !== null && entryY !== null && currentY !== null) {
-                const logicalX = timeScale.coordinateToLogical(x);
-                if (logicalX !== null) {
-                   const endX = timeScale.logicalToCoordinate((logicalX + 10) as any);
-                   if (endX !== null) {
-                      const width = endX - x;
-                      const risk = Math.abs(tempEntry.price - crosshairPoint.price);
-                      const direction = crosshairPoint.price < tempEntry.price ? 'long' : 'short';
-                      const tpPrice = direction === 'long'
-                         ? tempEntry.price + (risk * targetRR)
-                         : tempEntry.price - (risk * targetRR);
-                      const tpY = series.priceToCoordinate(tpPrice);
-
-                      if (tpY !== null) {
-                          boxesToRender.push({
-                               id: 'temp',
-                               x, width,
-                               slBox: { y: Math.min(entryY, currentY), h: Math.abs(entryY - currentY), color: 'rgba(239, 68, 68, 0.3)' },
-                               tpBox: { y: Math.min(entryY, tpY), h: Math.abs(entryY - tpY), color: 'rgba(34, 197, 94, 0.3)' },
-                               label: `Drawing...`
-                          });
-                      }
-                   }
-                }
-            }
-       } catch(e){}
-    }
-
-    setRenderedBoxes(boxesToRender);
-  }, [boxes, drawingState, tempEntry, crosshairPoint, chartRef, seriesRef, targetRR]);
-
-  useEffect(() => {
-    if (!chartRef.current) return;
-    const timeScale = chartRef.current.timeScale();
-    timeScale.subscribeVisibleLogicalRangeChange(updateBoxes);
-    timeScale.subscribeVisibleTimeRangeChange(updateBoxes);
-    timeScale.subscribeSizeChange(updateBoxes);
-    updateBoxes();
-    return () => {
-        timeScale.unsubscribeVisibleLogicalRangeChange(updateBoxes);
-        timeScale.unsubscribeVisibleTimeRangeChange(updateBoxes);
-        timeScale.unsubscribeSizeChange(updateBoxes);
-    };
-  }, [updateBoxes, chartRef]);
 
   return (
     <>
@@ -304,38 +213,6 @@ export const RiskRewardTool: React.FC<RiskRewardToolProps> = ({ chartRef, series
         >
           <Crosshair className="w-5 h-5" />
         </button>
-      </div>
-
-      {/* Render Boxes */}
-      <div className="absolute top-0 left-0 w-full h-full pointer-events-none overflow-hidden z-10">
-          {renderedBoxes.map(b => (
-             <div key={b.id} style={{ position: 'absolute', left: `${b.x}px`, width: `${b.width}px` }}>
-                {/* Stop Loss Box */}
-                <div
-                   style={{
-                      position: 'absolute',
-                      top: `${b.slBox.y}px`,
-                      height: `${b.slBox.h}px`,
-                      width: '100%',
-                      backgroundColor: b.slBox.color,
-                      border: '1px solid rgba(239, 68, 68, 0.5)',
-                   }}
-                />
-                {/* Take Profit Box */}
-                <div
-                   style={{
-                      position: 'absolute',
-                      top: `${b.tpBox.y}px`,
-                      height: `${b.tpBox.h}px`,
-                      width: '100%',
-                      backgroundColor: b.tpBox.color,
-                      border: '1px solid rgba(34, 197, 94, 0.5)',
-                   }}
-                >
-                    <span className="absolute text-[10px] font-mono text-white/70 bottom-1 right-1">{b.label}</span>
-                </div>
-             </div>
-          ))}
       </div>
     </>
   );
