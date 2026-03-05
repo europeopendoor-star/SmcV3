@@ -54,6 +54,21 @@ export async function runSignalEngine() {
 
         if (!insertErr) {
             console.log(`Generated SMC Context Signal: ${signalId}`);
+
+            // If we generated a new signal, we should cancel older waiting/active signals
+            // for the same pair in the OPPOSITE direction, as the market structure has shifted.
+            const { data: opposingSignals } = await db.from('signals')
+              .select('id')
+              .eq('pair', pair)
+              .neq('direction', direction)
+              .in('status', ['waiting', 'active']);
+
+            if (opposingSignals && opposingSignals.length > 0) {
+              for (const opp of opposingSignals) {
+                 await db.from('signals').update({ status: 'closed' }).eq('id', opp.id);
+                 console.log(`Closed opposing signal due to structure shift: ${opp.id}`);
+              }
+            }
         } else {
             console.error(`Error generating SMC Context Signal:`, insertErr);
         }
@@ -62,14 +77,16 @@ export async function runSignalEngine() {
   }
 }
 
-// Update signal statuses (e.g., hit SL, hit TP)
+// Update signal statuses (e.g., hit SL, hit TP, or activate waiting signals)
 export async function updateSignalStatuses() {
-  const { data: activeSignals, error } = await db.from('signals').select('*').eq('status', 'active');
-  if (error || !activeSignals) return;
+  const { data: signals, error } = await db.from('signals')
+    .select('*')
+    .in('status', ['active', 'waiting']);
+  if (error || !signals) return;
 
-  for (const signal of activeSignals) {
+  for (const signal of signals) {
     const { data: currentPriceCandle } = await db.from('candles')
-        .select('close')
+        .select('close, high, low')
         .eq('pair', signal.pair)
         .order('time', { ascending: false })
         .limit(1)
@@ -77,19 +94,40 @@ export async function updateSignalStatuses() {
 
     if (!currentPriceCandle) continue;
     const currentPrice = currentPriceCandle.close;
+    const currentHigh = currentPriceCandle.high;
+    const currentLow = currentPriceCandle.low;
 
-    if (signal.direction === 'LONG') {
-      if (currentPrice <= signal.stop_loss) {
+    if (signal.status === 'waiting') {
+      // Check if price has entered the entry zone
+      const inZone = currentLow <= signal.entry_zone_high && currentHigh >= signal.entry_zone_low;
+
+      // Check if price has completely invalidated the setup before entry
+      const invalidated = signal.direction === 'LONG'
+        ? currentLow <= signal.stop_loss
+        : currentHigh >= signal.stop_loss;
+
+      if (invalidated) {
         await db.from('signals').update({ status: 'closed' }).eq('id', signal.id);
-      } else if (currentPrice >= signal.take_profit_1) {
-        // Partial close or full close depending on strategy
-        await db.from('signals').update({ status: 'closed' }).eq('id', signal.id);
+      } else if (inZone) {
+        await db.from('signals').update({ status: 'active' }).eq('id', signal.id);
       }
-    } else {
-      if (currentPrice >= signal.stop_loss) {
-        await db.from('signals').update({ status: 'closed' }).eq('id', signal.id);
-      } else if (currentPrice <= signal.take_profit_1) {
-        await db.from('signals').update({ status: 'closed' }).eq('id', signal.id);
+      continue;
+    }
+
+    if (signal.status === 'active') {
+      if (signal.direction === 'LONG') {
+        if (currentLow <= signal.stop_loss) {
+          await db.from('signals').update({ status: 'closed' }).eq('id', signal.id);
+        } else if (currentHigh >= signal.take_profit_1) {
+          // Partial close or full close depending on strategy
+          await db.from('signals').update({ status: 'closed' }).eq('id', signal.id);
+        }
+      } else {
+        if (currentHigh >= signal.stop_loss) {
+          await db.from('signals').update({ status: 'closed' }).eq('id', signal.id);
+        } else if (currentLow <= signal.take_profit_1) {
+          await db.from('signals').update({ status: 'closed' }).eq('id', signal.id);
+        }
       }
     }
   }
