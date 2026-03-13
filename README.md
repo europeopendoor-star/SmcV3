@@ -4,7 +4,7 @@ A full-stack, institutional-grade Forex trading platform that automatically dete
 
 ## 🚀 Features
 
-*   **Real-Time Market Data:** Ingests live and historical data for major Forex pairs (XAUUSD, EURUSD, GBPUSD, USDJPY, AUDUSD, USDCAD) using `yahoo-finance2`.
+*   **Real-Time Market Data & Execution:** Ingests live/historical data and executes trades directly through a local MetaTrader 5 (MT5) Python microservice (`mt5_server.py`).
 *   **SMC Engine (Higher Timeframe):** Automatically detects institutional footprints on H1 and H4 timeframes:
     *   Break of Structure (BOS) & Change of Character (CHoCH)
     *   Order Blocks (OB)
@@ -12,38 +12,56 @@ A full-stack, institutional-grade Forex trading platform that automatically dete
 *   **Sniper Engine (Lower Timeframe):** Waits for price to enter an unmitigated HTF zone, then looks for M1/M5 liquidity sweeps and displacement to generate high Risk-to-Reward (R:R) limit entries.
 *   **Interactive Charting:** Built with `lightweight-charts`, allowing users to visualize live candlesticks alongside dynamically drawn Order Blocks and Fair Value Gaps.
 *   **Performance Dashboard:** Tracks historical win rates, total pips caught, average R:R, and a breakdown of SMC vs. Sniper trades.
+*   **AI Coach:** Integrated with Google Gemini API to provide intelligent, contextual feedback on your trading performance.
 *   **Real-Time Alerts:** Integrated with `node-telegram-bot-api` to dispatch instant notifications to a Telegram channel when a new signal is generated.
 *   **VIP Access (Authentication):** Protected routes using Supabase Authentication (Google Sign-In) to restrict access to premium signals and charts.
 
 ## 🛠️ Tech Stack
 
-*   **Frontend:** React 18, Vite, Tailwind CSS, React Router, Lucide Icons, Lightweight Charts.
-*   **Backend:** Node.js, Express.
-*   **Database:** SQLite (`better-sqlite3`) for fast, local storage of candles, structures, zones, and signals.
-*   **Data Source:** Yahoo Finance API (`yahoo-finance2`).
+*   **Frontend:** React 19, Vite, Tailwind CSS, React Router, Lucide Icons, Lightweight Charts.
+*   **Backend:** Node.js, Express, Python (FastAPI).
+*   **Database:** Supabase (PostgreSQL) for scalable storage of candles, structures, zones, and signals.
+*   **Data Source & Execution:** MetaTrader 5 (via local Python microservice).
 *   **Authentication:** Supabase Auth.
+*   **AI Integration:** Google Gemini API (`@google/genai`).
 
 ## 📦 Installation & Setup
 
 1.  **Clone the repository** and navigate to the project directory.
-2.  **Install dependencies:**
+2.  **Install Node dependencies:**
     ```bash
     npm install
     ```
-3.  **Environment Variables:**
+3.  **Install Python dependencies:**
+    Navigate to the `server/python` directory and install required packages (e.g., `fastapi`, `uvicorn`, `MetaTrader5`, `pandas`, `pydantic`).
+
+4.  **Environment Variables:**
     Create a `.env` file in the root directory and add the following variables (see `.env.example`):
     ```env
+    # Gemini AI (for AI Coach)
+    GEMINI_API_KEY=your_gemini_api_key
+
     # Telegram Bot (Optional - for alerts)
     TELEGRAM_BOT_TOKEN=your_bot_token
     TELEGRAM_CHANNEL_ID=your_channel_id
 
-    # Supabase Client Config (Optional - for VIP Login)
+    # Supabase Client Config (Required for DB and Auth)
     VITE_SUPABASE_URL=your_supabase_url
     VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
-    ```
-    *Note: If Supabase is not configured, the app will fall back to a "Demo Mode" login.*
 
-4.  **Start the Development Server:**
+    # Local MT5 API URL
+    MT5_API_URL=http://127.0.0.1:8000
+    ```
+
+5.  **Start the MT5 Microservice:**
+    Ensure MetaTrader 5 is open and logged in on your Windows machine. Then, start the Python server:
+    ```bash
+    cd server/python
+    python mt5_server.py
+    ```
+
+6.  **Start the Development Server:**
+    In a new terminal window at the project root:
     ```bash
     npm run dev
     ```
@@ -55,7 +73,7 @@ A full-stack, institutional-grade Forex trading platform that automatically dete
 2.  **LTF Trigger:** The Sniper Engine monitors the M1 and M5 charts. It waits for the price to tap into a HTF zone.
 3.  **Liquidity Sweep:** Inside the zone, it looks for a sweep of a recent low (for longs) or high (for shorts), trapping retail traders.
 4.  **Displacement:** It then looks for a strong move in the opposite direction, creating a micro-structure break.
-5.  **Execution:** A limit order signal is generated at the newly formed micro-zone, with a tight stop loss just beyond the swept liquidity, allowing for massive R:R targets.
+5.  **Execution:** A limit order signal is generated at the newly formed micro-zone, with a tight stop loss just beyond the swept liquidity, allowing for massive R:R targets. The backend syncs active trades with MT5 tickets to track automatic closures (SL/TP).
 
 ## ⚠️ Disclaimer
 
