@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Activity, LineChart, BookOpen, Bell, Menu, X, TrendingUp, LogOut, LogIn } from 'lucide-react';
+import { Activity, LineChart, BookOpen, Bell, Menu, X, TrendingUp, LogOut, LogIn, Terminal } from 'lucide-react';
 import { useState } from 'react';
 import { logout } from '../lib/supabase';
 
@@ -10,6 +10,7 @@ export default function Navbar({ user, setUser }: { user: any, setUser: (user: a
 
   const navItems = [
     { name: 'Home', path: '/', icon: Activity },
+    { name: 'Terminal', path: '/dashboard', icon: Terminal },
     { name: 'Signals', path: '/signals', icon: LineChart },
     { name: 'Chart', path: '/chart', icon: LineChart },
     { name: 'Performance', path: '/performance', icon: TrendingUp },

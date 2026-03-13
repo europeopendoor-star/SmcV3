@@ -14,6 +14,7 @@ import Education from './pages/Education';
 import Alerts from './pages/Alerts';
 import Performance from './pages/Performance';
 import Login from './pages/Login';
+import Dashboard from './pages/Dashboard';
 import { supabase } from './lib/supabase';
 
 export default function App() {
@@ -83,6 +84,11 @@ export default function App() {
               <>
                 <Performance />
               </>
+            } />
+            <Route path="/dashboard" element={
+              <ProtectedRoute>
+                <Dashboard />
+              </ProtectedRoute>
             } />
           </Routes>
         </main>
