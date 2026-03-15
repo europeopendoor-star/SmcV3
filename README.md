@@ -33,12 +33,16 @@ A full-stack, institutional-grade Forex trading platform that automatically dete
     npm install
     ```
 3.  **Install Python dependencies:**
-    Navigate to the `server/python` directory and install required packages (e.g., `fastapi`, `uvicorn`, `MetaTrader5`, `pandas`, `pydantic`).
+    Navigate to the `server/python` directory and install required packages:
+    ```bash
+    pip install -r requirements.txt
+    ```
 
 4.  **Environment Variables:**
     Create a `.env` file in the root directory and add the following variables (see `.env.example`):
     ```env
     # Gemini AI (for AI Coach)
+    # Note: Injected into the client bundle via Vite's define config (process.env.GEMINI_API_KEY)
     GEMINI_API_KEY=your_gemini_api_key
 
     # Telegram Bot (Optional - for alerts)
@@ -66,6 +70,7 @@ A full-stack, institutional-grade Forex trading platform that automatically dete
     npm run dev
     ```
     This will start both the Express backend (which handles data ingestion and signal generation) and the Vite frontend.
+    *Note: Because the frontend is deployed to serverless environments, it queries Supabase directly for data rather than relying on the local Express `/api` backend routes.*
 
 ## 🧠 How the Strategy Works
 
